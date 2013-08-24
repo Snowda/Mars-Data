@@ -59,7 +59,7 @@ def get_country_name():
     if(target_online(ip_check_url)):
         response = re.search(re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"), 
             urllib.urlopen(ip_check_url).read()).group()
-        geo_ip = pygeoip.GeoIP('data/GeoIP.dat')
+        geo_ip = pygeoip.GeoIP('../GeoIP.dat')
         return geo_ip.country_name_by_name(response) #country_code_by_name
     else :
         return "URL Check IP offline"
