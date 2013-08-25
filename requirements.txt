@@ -1,0 +1,6 @@
+--list of dependencies required to run code--
+
+Pylint
+converage.py
+
+more to be announced
