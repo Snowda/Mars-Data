@@ -301,6 +301,9 @@ def calculate_uml(file_path, uml_name):
     """Runs UML image generator"""
 
     uml_path = "../docs/uml/"
+    if not os.path.isdir(uml_path):
+        os.makedirs(uml_path)
+        
     subprocess.call("pyreverse --project="+uml_name+"UML --filter-mode=ALL "+file_path+uml_name+".py", 
         shell=True)
 
