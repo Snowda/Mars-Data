@@ -1,10 +1,7 @@
-Mars-Data
-===============
+#Mars-Data
 
-Program which processes multiple sources of mars data.
+## Processes and merges various sources of martian based information
 
-================
-Sources of data:
-PyEphem (http://rhodesmill.org/pyephem/) Git: https://github.com/brandon-rhodes/pyephem
-
-Mars Atmospheric Aggregation System API http://marsweather.ingenology.com/
+##Sources of data:
+1. Orbital Mechanics - [Astropy](https://github.com/astropy/astropy)
+1. Martian Weather - [Mars Atmospheric Aggregation System API (NO LONGER ONLINE)](http://marsweather.ingenology.com/)
