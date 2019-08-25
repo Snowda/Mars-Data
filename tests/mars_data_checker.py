@@ -1,30 +1,37 @@
 """Runs pylint on mars_data.py with desired attributes"""
-import subprocess, sys, os, re, argparse
+import subprocess
+import sys
+import os
+import re
 
 def read_file_to_data(file_to_modify):
     """ """
-    modifing_file = open(file_to_modify, "r")
-    contents = modifing_file.readlines()
+    with open(file_to_modify, "r") as modifing_file:
+        contents = modifing_file.readlines()
     modifing_file.close()
     return contents
 
 def write_data_to_file(file_to_modify, write_data):
     """"""
-    modifing_file = open(file_to_modify, "w")
-    contents = "".join(write_data)
-    modifing_file.write(contents)
+    with open(file_to_modify, "w") as modifing_file:
+        contents = "".join(write_data)
+        modifing_file.write(contents)
     modifing_file.close()
 
-def find_missing_docstring(lint_file, error_dict=dict()):
+def find_missing_docstring(lint_file, input_dict=None):
     """ """
     error_type = "Missing docstring"
+
+    if input_dict is None:
+        error_dict = dict()
+    else:
+        error_dict = input_dict
 
     for line in lint_file:
         if error_type in line:
             re1 = '.*?'   # Non-greedy match on filler
             re2 = '(\\d+)'    # Integer Number 1
-            rg = re.compile(re1+re2, re.IGNORECASE|re.DOTALL)
-            m = rg.search(line)
+            m = re.compile(re1+re2, re.IGNORECASE|re.DOTALL).search(line)
             if m:
                 int1 = m.group(1)
                 leading_spaces = len(line) - len(line.lstrip()) + 4
@@ -48,11 +55,11 @@ def fix_variable_names(lint_file, modified_file, error_dict=dict()):
     """ """
     variable.lower()
     if variable <= 2:
-        re.sub(r'\b'+variable+'\b', 'var_'+variable, s)
+        re.sub(r'\b' + variable + '\b', 'var_' + variable, s)
 
     return error_dict
 
-def find_operator_space(lint_file, error = list()):
+def find_operator_space(lint_file, error=list()):
     """ """
     error_type = "Operator not preceded by a space"
 
@@ -60,11 +67,9 @@ def find_operator_space(lint_file, error = list()):
         if error_type in line:
             re1 = '.*?'   # Non-greedy match on filler
             re2 = '(\\d+)'    # Integer Number 1
-            rg = re.compile(re1+re2, re.IGNORECASE|re.DOTALL)
-            m = rg.search(line)
+            m = re.compile(re1+re2, re.IGNORECASE|re.DOTALL).search(line)
             if m:
-                int1 = m.group(1)
-                error.append(int(int1) - 1)
+                error.append(int(m.group(1)) - 1)
 
     return error
 
@@ -74,7 +79,7 @@ def fix_operator_space(lint_file, contents, error=list()):
 
     for key in reversed(sorted(error_list)):
         stripped = contents[key]
-        print stripped
+        print(stripped)
         if "=" in contents[key]:
             stripped = re.sub('=', ' = ', stripped)
             contents[key] = contents[key].replace(contents[key], stripped)
@@ -87,25 +92,26 @@ def fix_operator_space(lint_file, contents, error=list()):
 
     return contents
 
-def find_dangerous_default_value(lint_file, error_dict=dict()):
+def find_dangerous_default_value(lint_file, input_dict=None):
     """ """
     error_type = "Dangerous default value"
+
+    if input_dict is None:
+        error_dict = dict()
+    else:
+        error_dict = input_dict
 
     for line in lint_file:
         if error_type in line:
             re1 = '.*?'   # Non-greedy match on filler
             re2 = '(\\d+)'    # Integer Number 1
-            rg = re.compile(re1+re2, re.IGNORECASE|re.DOTALL)
-            m = rg.search(line)
-            print line
+            m = re.compile(re1 + re2, re.IGNORECASE|re.DOTALL).search(line)
+            print(line)
             if m:
                 int1 = m.group(1)
-
                 re1 = '.*?'   # Non-greedy match on filler
                 re2 = '(\\(.*\\))'    # Round Braces 1
-
-                rg = re.compile(re1+re2, re.IGNORECASE|re.DOTALL)
-                m = rg.search(line)
+                m = re.compile(re1+re2, re.IGNORECASE|re.DOTALL).search(line)
                 if m:
                     out_string = m.group(1)
                     out_string = re.sub(r"\(\) \(__builtin__.", "", str(out_string))
@@ -126,7 +132,7 @@ def fix_dangerous_default_value(lint_file, contents, error_dict=dict()):
         if result == "None":
             result = re.search(r'\((.*?)="None"', contents[key])
         var_name = result.group(1)
-        print str(var_name).strip()+" "+str(key)
+        print(str(var_name).strip()+" "+str(key))
         if errors[key] == 'dict':
             extraline = 'if '+str(var_name)+' is "None": '+str(var_name)+' = dict()'
         else:
@@ -148,23 +154,26 @@ def find_comma_space(lint_file, error=list()):
 
     for line in lint_file:
         if error_type in line:
-            re1 = '.*?'   # Non-greedy match on filler
-            re2 = '(\\d+)'    # Integer Number 1
-            rg = re.compile(re1+re2, re.IGNORECASE|re.DOTALL)
-            m = rg.search(line)
+            re1 = '.*?' # Non-greedy match on filler
+            re2 = '(\\d+)' # Integer Number 1
+            m = re.compile(re1+re2, re.IGNORECASE|re.DOTALL).search(line)
             if m:
-                int1 = m.group(1)
-                error.append(int(int1) -1)
+                error.append(int(m.group(1)) -1)
 
     return error
 
-def fix_comma_space(lint_file, contents, error=list()):
+def fix_comma_space(lint_file, contents, input_list=None):
     """ """
+    if input_list is None:
+        error = list()
+    else:
+        error = input_list
+
     error_list = find_comma_space(lint_file, error)
 
     for key in reversed(sorted(error_list)):
         stripped = contents[key]
-        print stripped
+        print(stripped)
         if "," in contents[key]:
             stripped = re.sub(',', ', ', stripped)
             contents[key] = contents[key].replace(contents[key], stripped)
@@ -174,16 +183,20 @@ def fix_comma_space(lint_file, contents, error=list()):
 
     return contents
 
-def find_line_length_errors(lint_file, error_list = list()):
+def find_line_length_errors(lint_file, input_list=None):
     """ """
     error_type = "Line too long"
+
+    if input_list is None:
+        error_list = list()
+    else:
+        error_list = input_list
 
     for line in lint_file:
         if error_type in line:
             re1 = '.*?'   # Non-greedy match on filler
             re2 = '(\\d+)'    # Integer Number 1
-            rg = re.compile(re1+re2, re.IGNORECASE|re.DOTALL)
-            m = rg.search(line)
+            m = re.compile(re1+re2, re.IGNORECASE|re.DOTALL).search(line)
             if m:
                 int1 = m.group(1)
                 error_list.append(int(int1)-1)
@@ -191,8 +204,13 @@ def find_line_length_errors(lint_file, error_list = list()):
     error_list.reverse()
     return error_list
 
-def fix_line_length_errors(in_file, contents, error_list=list()):
+def fix_line_length_errors(in_file, contents, input_list=None):
     """ """
+    if input_list is None:
+        error_list = list()
+    else:
+        error_list = input_list
+
     errors = find_line_length_errors(in_file, error_list)
 
     #print errors
@@ -212,38 +230,43 @@ def fix_line_length_errors(in_file, contents, error_list=list()):
 
     return contents
 
-def find_unused_import(lint_file, error_dict=dict()):
+def find_unused_import(lint_file, input_dict=None):
     """ """
     error_type = "Unused import"
 
+    if input_dict is None:
+        error_dict = dict()
+    else:
+        error_dict = input_dict
+
     for line in lint_file:
         if error_type in line:
-            re1 = '.*?'   # Non-greedy match on filler
-            re2 = '(\\d+)'    # Integer Number 1
-            rg = re.compile(re1+re2, re.IGNORECASE|re.DOTALL)
-            m = rg.search(line)
+            re1 = '.*?' # Non-greedy match on filler
+            re2 = '(\\d+)' # Integer Number 1
+            m = re.compile(re1+re2, re.IGNORECASE|re.DOTALL).search(line)
             if m:
                 int1 = m.group(1)
-
                 str1 = '.*?'   # Non-greedy match on filler
                 str2 = '(?:[a-z][a-z]+)'   # Uninteresting: word
                 str6 = '((?:[a-z][a-z]+))' # Word 1
-
-                rg = re.compile(str1+str2+str1+str2+str1+str6,
-                    re.IGNORECASE|re.DOTALL)
-                n = rg.search(line)
+                n = re.compile(str1+str2+str1+str2+str1+str6, re.IGNORECASE|re.DOTALL).search(line)
                 if n:
                     out_string = n.group(1)
                     error_dict[out_string] = str((int(int1) - 1))
-    
+
     return error_dict
 
-def fix_unused_import(in_file, contents, error_dict=dict()):
+def fix_unused_import(in_file, contents, input_dict=None):
     """ """
+
+    if input_dict is None:
+        error_dict = dict()
+    else:
+        error_dict = input_dict
+
     errors = find_unused_import(in_file, error_dict)
 
-    for number, line in enumerate(contents):
-        #print str(number)+" : "+str(line)
+    for number, _ in enumerate(contents):
         stripped = contents[number]
         for key in errors:
             if str(errors[key]) == str(number):
@@ -263,39 +286,36 @@ def apply_fixes(lint_file, modified_file):
     """ """
     contents = read_file_to_data(modified_file)
     lint_data = read_file_to_data(lint_file)
-
     contents = fix_comma_space(lint_data, contents)
     contents = fix_operator_space(lint_data, contents)
     contents = fix_unused_import(lint_data, contents)
     contents = fix_missing_docstring(lint_data, contents)
-    print "attempting dangerous defaults"
+    print("attempting dangerous defaults")
     contents = fix_dangerous_default_value(lint_data, contents)
-    print "dangerous defaults done"
-
+    print("dangerous defaults done")
     #contents = fix_line_length_errors(lint_data, contents)
     #contents = fix_variable_names(lint_data, contents)
-    
     write_data_to_file(modified_file, contents)
 
 def apply_lint(lint_file):
     """ """
-
     recorded_lint = 'temp.txt'
-    if os.path.isdir(os.path.join(os.path.dirname( __file__ ), os.pardir)):
-        sys.path.insert(0, os.path.join(os.path.dirname( __file__ ), os.pardir))
+    if os.path.isdir(os.path.join(os.path.dirname(__file__), os.pardir)):
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
     subprocess.call("pylint --const-rgx='[a-z_][a-z0-9_]{2,30}$'" \
-        " --disable=RP0401 --disable=RP0001 --disable=RP0002 " \
-        "--disable=RP0101 --disable=RP0701 --disable=RP0801 "+lint_file+" > "+recorded_lint, 
-        shell=True)
+                    " --disable=RP0401 --disable=RP0001 --disable=RP0002 " \
+                    "--disable=RP0101 --disable=RP0701 --disable=RP0801 " + lint_file + \
+                    " > "+recorded_lint,
+                    shell=True)
 
     apply_fixes(recorded_lint, lint_file)
     os.remove(recorded_lint)
 
     subprocess.call("pylint --const-rgx='[a-z_][a-z0-9_]{2,30}$'" \
-        " --disable=RP0401 --disable=RP0001 --disable=RP0002 " \
-        "--disable=RP0101 --disable=RP0701 --disable=RP0801 "+lint_file, 
-        shell=True)
+                    " --disable=RP0401 --disable=RP0001 --disable=RP0002 " \
+                    "--disable=RP0101 --disable=RP0701 --disable=RP0801 "+lint_file,
+                    shell=True)
 
 def calculate_uml(file_path, uml_name):
     """Runs UML image generator"""
@@ -303,12 +323,12 @@ def calculate_uml(file_path, uml_name):
     uml_path = "../docs/uml/"
     if not os.path.isdir(uml_path):
         os.makedirs(uml_path)
-        
-    subprocess.call("pyreverse --project="+uml_name+"UML --filter-mode=ALL "+file_path+uml_name+".py", 
-        shell=True)
 
-    subprocess.call("dot -Tpng classes_"+uml_name+"UML.dot -o "+uml_name+"UML.png", 
-        shell=True)
+    subprocess.call("pyreverse --project=" + uml_name + "UML --filter-mode=ALL " + file_path + \
+                    uml_name + ".py", shell=True)
+
+    subprocess.call("dot -Tpng classes_"+uml_name+"UML.dot -o "+uml_name+"UML.png",
+                    shell=True)
     os.remove("classes_"+uml_name+"UML.dot")
     os.rename(uml_name+"UML.png", uml_path+uml_name+"_uml.png")
 
@@ -324,7 +344,7 @@ def main():
     subprocess.call("coverage report", shell=True)
 
     #subprocess.call("python -m unittest test_"+tested_file+".py")
-    apply_lint(tested_file_python)    
+    apply_lint(tested_file_python)
 
 if __name__ == '__main__':
     main()
