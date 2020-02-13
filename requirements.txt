@@ -1,6 +1,6 @@
---list of dependencies required to run code--
-
-Pylint
-converage.py
-
-more to be announced
+astropy==4.0.0
+Flask==1.1.1
+numpy==1.17.4
+requests==2.22.0
+scipy==1.3.1
+geoip2=3.0.0
