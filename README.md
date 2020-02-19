@@ -1,5 +1,7 @@
 # Mars-Data
 
+![Build Status](https://github.com/Snowda/Mars-Data/workflows/Build/badge.svg)
+
 ## Processes and merges various sources of martian based information
 
 ## Sources of data:
