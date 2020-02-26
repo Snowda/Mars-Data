@@ -78,31 +78,31 @@ def display_data():
         sunrise = report['sunrise']
         sunset = report['sunset']
 
-        print("date :"+str(terrestrial_date)+" (sol "+str(sol)+")")
+        print("Date :" + str(terrestrial_date) + " (sol " + str(sol) + ")")
 
         if get_country_name() in ("United States", "Belize", "Bermuda", "Palau"):
             print("The lowest temperature today was: " \
-                + str(min_temp_fahrenheit)+" F ("+str(min_temp)+" C)")
-            print("The highest temperature today was: " \
-                + str(max_temp_fahrenheit)+" F ("+str(max_temp)+" C)")
+                + str(min_temp_fahrenheit) + " F (" + str(min_temp) + " C)")
+            print("The highest temperature today was: %s F (%s C)" % (str(max_temp_fahrenheit),
+                                                                      str(max_temp)))
         else:
-            print("The lowest temperature today was: "+str(min_temp)+" C")
-            print("The highest temperature today was: "+str(max_temp)+" C")
+            print("Today's lowest temperature was %s C" % (str(min_temp)))
+            print("Today's highest temperature was %s C" % (str(min_temp)))
 
         if str(pressure_string) == "Higher":
             atmo_status = "rising"
         else:
             atmo_status = "falling"
-        print("Atmospheric pressure is "+str(pressure)+" and "+str(atmo_status))
-        print("Mars season : "+str(mars_season))
+        print("Atmospheric pressure is " + str(pressure) + " and " + str(atmo_status))
+        print("Mars season : %s" % (str(mars_season)))
         if str(abs_humidity) != "None":
-            print("Humidity "+str(abs_humidity))
+            print("Humidity " + str(abs_humidity))
         if str(wind_speed) != "None":
             print("The wind is blowing" + str(wind_direction) + " at a speed of " \
-                + str(wind_speed)+"km/s")
-        print("The weather is "+str(atmo_opacity))
+                + str(wind_speed) + "km/s")
+        print("The weather is " + str(atmo_opacity))
         print(season)
-        print("The sun rises at "+str(sunrise))
+        print("The sun rises at " + str(sunrise))
         print("The sun sets at " + str(sunset))
     else:
         if is_internet_on():
