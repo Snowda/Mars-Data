@@ -81,7 +81,7 @@ def display_data():
         print("Date :" + str(terrestrial_date) + " (sol " + str(sol) + ")")
 
         if get_country_name() in ("United States", "Belize", "Bermuda", "Palau"):
-            print("The lowest temperature today was: " \
+            print("The lowest temperature today was: " 
                   + str(min_temp_fahrenheit) + " F (" + str(min_temp) + " C)")
             print("The highest temperature today was: %s F (%s C)" % (str(max_temp_fahrenheit),
                                                                       str(max_temp)))
@@ -98,7 +98,7 @@ def display_data():
         if str(abs_humidity) != "None":
             print("Humidity " + str(abs_humidity))
         if str(wind_speed) != "None":
-            print("The wind is blowing" + str(wind_direction) + " at a speed of " \
+            print("The wind is blowing" + str(wind_direction) + " at a speed of " 
                   + str(wind_speed) + "km/s")
         print("The weather is " + str(atmo_opacity))
         print(season)
