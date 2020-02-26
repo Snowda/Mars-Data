@@ -13,7 +13,7 @@ WEATHER_URL = "http://marsweather.ingenology.com/v1/latest/"
 def comms_delay_to_mars():
     """ Calculates the speed of light communications delay to mars"""
     time_now = Time(datetime.now().strftime("%Y-%m-%d %H:%M"))
-    reference_location = EarthLocation.of_site('greenwich') # TODO get users location
+    reference_location = EarthLocation.of_site('greenwich')  # TODO get users location
     with solar_system_ephemeris.set('de432s'):
         mars = get_body('mars', time_now, reference_location)
         earth = get_body('earth', time_now, reference_location)
@@ -36,7 +36,7 @@ def comms_delay_to_mars():
 
 def is_internet_on():
     """Checks if the internet connetion is working"""
-    connection = get('http://www.google.com', timeout=2) #google is always online
+    connection = get('http://www.google.com', timeout=2)  # google is always online
     if connection.status_code == 200:
         return True
 
@@ -50,7 +50,7 @@ def get_country_name():
         response = re.search(re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"),
                              url_data.content).group()
         geo_ip = GeoIP('../data/GeoIP.dat')
-        return geo_ip.country_name_by_name(response) #country_code_by_name
+        return geo_ip.country_name_by_name(response)  # country_code_by_name
 
     print(url_data.status_code, url_data.reason)
     return None
@@ -82,7 +82,7 @@ def display_data():
 
         if get_country_name() in ("United States", "Belize", "Bermuda", "Palau"):
             print("The lowest temperature today was: " \
-                + str(min_temp_fahrenheit) + " F (" + str(min_temp) + " C)")
+                  + str(min_temp_fahrenheit) + " F (" + str(min_temp) + " C)")
             print("The highest temperature today was: %s F (%s C)" % (str(max_temp_fahrenheit),
                                                                       str(max_temp)))
         else:
@@ -99,7 +99,7 @@ def display_data():
             print("Humidity " + str(abs_humidity))
         if str(wind_speed) != "None":
             print("The wind is blowing" + str(wind_direction) + " at a speed of " \
-                + str(wind_speed) + "km/s")
+                  + str(wind_speed) + "km/s")
         print("The weather is " + str(atmo_opacity))
         print(season)
         print("The sun rises at " + str(sunrise))
