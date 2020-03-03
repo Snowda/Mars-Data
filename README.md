@@ -1,6 +1,7 @@
 # Mars-Data
 
-![Build Status](https://github.com/Snowda/Mars-Data/workflows/Build/badge.svg)
+![Windows Build Status](https://github.com/Snowda/Mars-Data/workflows/Windows/badge.svg)
+![Linux Build Status](https://github.com/Snowda/Mars-Data/workflows/Linux/badge.svg)
 ![License](https://img.shields.io/github/license/Snowda/Mars-Data)
 
 ## Processes and merges various sources of martian based information
