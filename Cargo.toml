@@ -1,0 +1,30 @@
+[package]
+
+name = "mars-data"
+version = "0.1.2"
+authors = ["Conor Forde"]
+
+license = "LGPL3"
+
+repository = "https://www.github.com/Snowda/Mars-Data"
+
+description = "Mars data parsing"
+keywords = ["mars", "planet", "data"]
+
+[dependencies]
+
+# Astro data
+astro = "2.0.0"
+
+# JSON
+serde = { version = "1.0", features = ["derive"] }
+
+# Networking
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+
+# Time library
+chrono = "0.4"
+
+# SQL
+sqlx = "0.5.2"
