@@ -1,5 +1,5 @@
 astropy==4.3.1
-Flask==1.1.2
+Flask==2.0.1
 numpy==1.20.3
 requests==2.26.0
 scipy==1.7.1
