@@ -3,4 +3,4 @@ Flask==2.0.1
 numpy==1.21.2
 requests==2.26.0
 scipy==1.7.1
-geoip2==4.2.0
+geoip2==4.4.0
