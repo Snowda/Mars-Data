@@ -1,6 +1,6 @@
 astropy==5.0.4
 Flask==2.1.2
-numpy==1.22.3
+numpy==1.22.4
 requests==2.27.1
 scipy==1.8.1
 geoip2==4.5.0
