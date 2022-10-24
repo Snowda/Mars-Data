@@ -91,7 +91,26 @@ def display_data():
     print("The sun rises at " + str(sunrise))
     print("The sun sets at " + str(sunset))
 
+def next_data_investigation():
+    # folder = https://atmos.nmsu.edu/PDS/data/mslrem_1001/DATA/
+    new_url = "https://atmos.nmsu.edu/PDS/data/mslrem_1001/DATA/SOL_00180_00269/SOL00224/RME_417331939RMD02240000000_______P7.TAB"
+
+    connection = get(new_url, timeout=2)
+    #print(connection.status_code)
+    #print(connection.content)
+    data = connection.content
+    file_name = "atmos.csv"
+    with open(file_name, "wb") as file_handler:  # Save the file
+        file_handler.write(data)
+        file_handler.close()
+    # TODO load into numpy array
+    # TODO what layers are what?
+    # TODO skip the file write entirely
+
+
+
 if __name__ == '__main__':
-    print(mars_comms_delay())
-    print(mars_comms_return_delay())
-    display_data()
+    # print(mars_comms_delay())
+    # print(mars_comms_return_delay())
+    # display_data()
+    next_data_investigation()
