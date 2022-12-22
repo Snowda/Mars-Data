@@ -1,4 +1,4 @@
-astropy==5.1.1
+astropy==5.2
 Flask==2.2.2
 numpy==1.23.5
 requests==2.28.1
