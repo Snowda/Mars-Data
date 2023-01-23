@@ -1,6 +1,6 @@
 # Mars Data
 
-## Parses & conbines Martian data sources
+## Parses & combines Martian data sources
 
 ![Linux Build Status](https://github.com/Snowda/Mars-Data/workflows/Linux/badge.svg)
 ![License](https://img.shields.io/github/license/Snowda/Mars-Data)
