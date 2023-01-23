@@ -1,12 +1,12 @@
 version: 2
 updates:
-  # Enable version updates for npm
-  - package-ecosystem: "pip"
-    # Look for `package.json` and `lock` files in the `root` directory
+  # Enable version updates for cargo
+  - package-ecosystem: "cargo"
+    # Look for `cargo.toml` files in the `root` directory
     directory: "/"
-    # Check the pip registry for updates every day (weekdays)
+    # Check the cargo registry for updates every day (weekdays)
     schedule:
       interval: "weekly"
 
-    # Allow up to 5 open pull requests for pip dependencies
+    # Allow up to 5 open pull requests for cargo dependencies
     open-pull-requests-limit: 5
