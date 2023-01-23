@@ -30,5 +30,8 @@ tokio = { version = "1.12.2", features = ["full"] }
 # Time library
 chrono = "0.4"
 
+# Two Line Elements
+tletools = "0.1.0"
+
 # SQL
 # sqlx = "0.5.2"
