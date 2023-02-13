@@ -1,5 +1,4 @@
 
-*.lock
 bin/atmos.csv
 target/
 src/atmos.csv
