@@ -1,12 +1,10 @@
 [package]
 
 name = "mars-data"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Conor Forde"]
+rust-version = "1.70.0"
 edition = '2021'
-
-license = "LGPL3"
-
 repository = "https://www.github.com/Snowda/Mars-Data"
 
 description = "Mars data parsing"
