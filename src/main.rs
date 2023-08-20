@@ -12,6 +12,13 @@ use reqwest::{Client, get};
 use reqwest::StatusCode;
 use reqwest::Error as ReqError;
 
+#[derive(Debug)]
+struct RootData {
+    sol_keys: Vec<String>,
+    validatity_checks
+}
+
+
 #[tokio::main]
 async fn main() {
     println!("{}", mars_comms_delay(None));
