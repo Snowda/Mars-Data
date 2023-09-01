@@ -23,7 +23,7 @@ serde_json = "1.0.105"
 reqwest = { version = "0.11.20", features = ["json", "gzip"] }
 
 # Threading
-tokio = { version = "1.29.1", features = ["full"] }
+tokio = { version = "1.32.0", features = ["full"] }
 
 # Time library
 chrono = "0.4.26"
