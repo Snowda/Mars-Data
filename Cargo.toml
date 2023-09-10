@@ -26,7 +26,7 @@ reqwest = { version = "0.11.20", features = ["json", "gzip"] }
 tokio = { version = "1.29.1", features = ["full"] }
 
 # Time library
-chrono = "0.4.26"
+chrono = "0.4.30"
 
 # Two Line Elements
 tletools = "0.1.0"
