@@ -2,3 +2,6 @@
 bin/atmos.csv
 target/
 src/atmos.csv
+config.json
+/.idea
+Cargo.lock
