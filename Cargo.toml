@@ -29,7 +29,7 @@ serde = { version = "1.0.219", optional = true, features = ["derive"] }
 serde_json = "1.0.143"
 
 # Networking
-reqwest = { version = "0.12.23", features = ["json", "gzip"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["json", "gzip", "rustls-tls"] }
 
 # Threading
 tokio = { version = "1.47.1", features = ["full"] }
