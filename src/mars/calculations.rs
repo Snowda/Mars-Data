@@ -11,8 +11,8 @@ pub fn mars_comms_delay(start_time: Option<DateTime<Utc>>) -> f64 {
 
     let (_is_common_era, year): (bool, u32) = dt.year_ce(); // TODO use common era?
 
-    let gregorian: Date = Date{year: year.try_into().unwrap(), month: dt.month().try_into().unwrap(),
-        decimal_day: dt.day().try_into().unwrap(), cal_type: CalType::Gregorian};
+    let gregorian: Date = Date{year: year as i16, month: dt.month() as u8,
+        decimal_day: dt.day() as f64, cal_type: CalType::Gregorian};
     let julian_day: f64 = julian_day(&gregorian);
     let (_, rad_vec_mars): (_, f64) = geocent_apprnt_ecl_coords(&Planet::Mars, julian_day);
 
