@@ -8,3 +8,4 @@ Cargo.lock
 *.lcov
 *.txt
 *.log
+/deploy
