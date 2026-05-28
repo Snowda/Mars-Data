@@ -5,6 +5,7 @@ version = "0.1.4"
 authors = ["Conor Forde"]
 rust-version = "1.96.0"
 edition = '2024'
+license = "MIT"
 default-run = "marsdata"
 repository = "https://www.github.com/Snowda/Mars-Data"
 
