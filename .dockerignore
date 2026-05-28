@@ -1,0 +1,11 @@
+target/
+.git/
+.gitignore
+.idea/
+Dockerfile
+.dockerignore
+*.md
+*.log
+*.lcov
+*.txt
+bin/
