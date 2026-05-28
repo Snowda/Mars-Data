@@ -7,3 +7,4 @@ Cargo.lock
 *.md
 *.lcov
 *.txt
+*.log
