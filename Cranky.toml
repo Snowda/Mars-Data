@@ -1,0 +1,7 @@
+# Reconcile clippy defaults with the project's coding conventions.
+# CLAUDE.md mandates explicit `return` statements, which clippy's
+# `needless_return` and related lints would otherwise fight.
+allow = [
+    "clippy::needless_return",
+    "clippy::redundant_closure",
+]
