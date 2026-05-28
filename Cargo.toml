@@ -3,8 +3,8 @@
 name = "mars-data"
 version = "0.1.4"
 authors = ["Conor Forde"]
-rust-version = "1.89.0"
-edition = '2021'
+rust-version = "1.96.0"
+edition = '2024'
 default-run = "marsdata"
 repository = "https://www.github.com/Snowda/Mars-Data"
 
@@ -36,3 +36,10 @@ tokio = { version = "1.47.1", features = ["full"] }
 
 # Time library
 chrono = "0.4.42"
+
+# Stack-allocated strings and vecs with known bounds
+arrayvec = "0.7"
+
+# Logging
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
