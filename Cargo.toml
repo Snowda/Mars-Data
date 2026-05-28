@@ -17,7 +17,8 @@ path = "src/main.rs"
 
 [features]
 default = ["std"]
-std = [ "serde" ]
+std = []
+integration_tests = []
 
 [dependencies]
 
@@ -25,20 +26,26 @@ std = [ "serde" ]
 astro = "2.0.0"
 
 # JSON
-serde = { version = "1.0.219", optional = true, features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
+
+# Config
+toml = "0.8"
 
 # Networking
 reqwest = { version = "0.12.23", default-features = false, features = ["json", "gzip", "rustls-tls"] }
+
+# Web framework
+axum = "0.8"
 
 # Threading
 tokio = { version = "1.47.1", features = ["full"] }
 
 # Time library
-chrono = "0.4.42"
+chrono = { version = "0.4.42", features = ["serde"] }
 
 # Stack-allocated strings and vecs with known bounds
-arrayvec = "0.7"
+arrayvec = { version = "0.7", features = ["serde"] }
 
 # Logging
 tracing = "0.1.44"

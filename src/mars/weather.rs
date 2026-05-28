@@ -5,14 +5,15 @@ use arrayvec::ArrayString;
 use chrono::NaiveDate;
 use chrono::NaiveTime;
 use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 use serde_json::value::Value;
 use tracing::info;
 
-const WEATHER_URL: &str = "https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json";
-const REQUEST_TIMEOUT_SECS: u64 = 5;
-const CONNECT_TIMEOUT_SECS: u64 = 3;
+use crate::mars::config::WeatherConfig;
 
-#[derive(Clone, Debug, PartialEq)]
+const WEATHER_URL: &str = "https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json";
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum WindDirection {
     N,
     NE,
@@ -57,7 +58,7 @@ impl Display for WindDirection {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AtmoOpacity {
     Sunny,
     Cloudy,
@@ -87,7 +88,7 @@ impl Display for AtmoOpacity {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UvIndex {
     Low,
     Moderate,
@@ -123,7 +124,7 @@ impl Display for UvIndex {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PressureDirection {
     Rising,
     Falling,
@@ -138,7 +139,8 @@ impl Display for PressureDirection {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Temperature {
     celsius: f64,
 }
@@ -155,7 +157,7 @@ impl Display for Temperature {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WeatherSample {
     terrestrial_date: Option<NaiveDate>,
     sol: u32,
@@ -316,11 +318,11 @@ impl WeatherSample {
     }
 }
 
-pub async fn load_weather_data() -> Result<WeatherSample, String> { // TODO typed error codes
+pub async fn load_weather_data(config: &WeatherConfig) -> Result<WeatherSample, String> { // TODO typed error codes
     let client_builder = reqwest::Client::builder()
         .gzip(true)
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(config.request_timeout_secs))
+        .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
         .build();
 
     return match client_builder { // TODO better code style than match chain
@@ -390,6 +392,70 @@ mod tests {
             sunrise: NaiveTime::from_hms_opt(6, 0, 0),
             sunset: NaiveTime::from_hms_opt(18, 0, 0),
         };
+    }
+
+    #[test]
+    fn wind_direction_display_covers_all_variants() {
+        for (direction, expected) in [
+            (WindDirection::N,  "N"),
+            (WindDirection::NE, "NE"),
+            (WindDirection::E,  "E"),
+            (WindDirection::SE, "SE"),
+            (WindDirection::S,  "S"),
+            (WindDirection::SW, "SW"),
+            (WindDirection::W,  "W"),
+            (WindDirection::NW, "NW"),
+            (WindDirection::Unknown, "Unknown"),
+        ] {
+            assert_eq!(format!("{}", direction), expected);
+        }
+    }
+
+    #[test]
+    fn atmo_opacity_display_covers_all_variants() {
+        for (opacity, expected) in [
+            (AtmoOpacity::Sunny,  "Sunny"),
+            (AtmoOpacity::Cloudy, "Cloudy"),
+            (AtmoOpacity::Dusty,  "Dusty"),
+            (AtmoOpacity::Unknown, "Unknown"),
+        ] {
+            assert_eq!(format!("{}", opacity), expected);
+        }
+    }
+
+    #[test]
+    fn uv_index_display_covers_all_variants() {
+        for (uv, expected) in [
+            (UvIndex::Low,      "Low"),
+            (UvIndex::Moderate, "Moderate"),
+            (UvIndex::High,     "High"),
+            (UvIndex::VeryHigh, "Very High"),
+            (UvIndex::Extreme,  "Extreme"),
+            (UvIndex::Unknown,  "Unknown"),
+        ] {
+            assert_eq!(format!("{}", uv), expected);
+        }
+    }
+
+    #[test]
+    fn pressure_direction_display_covers_all_variants() {
+        assert_eq!(format!("{}", PressureDirection::Rising), "Rising");
+        assert_eq!(format!("{}", PressureDirection::Falling), "Falling");
+    }
+
+    #[test]
+    fn weather_sample_json_round_trip_preserves_fields() {
+        let sample: WeatherSample = full_sample();
+        let encoded: String = serde_json::to_string(&sample).unwrap();
+        let decoded: WeatherSample = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, sample);
+    }
+
+    #[test]
+    fn temperature_serializes_transparently_as_number() {
+        let temp: Temperature = Temperature::from_celsius(-42.5);
+        let encoded: String = serde_json::to_string(&temp).unwrap();
+        assert_eq!(encoded, "-42.5");
     }
 
     #[test]
