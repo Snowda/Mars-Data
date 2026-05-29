@@ -40,7 +40,7 @@ reqwest = { version = "0.12.23", default-features = false, features = ["json", "
 axum = "0.8"
 
 # Threading
-tokio = { version = "1.47.1", features = ["full"] }
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 
 # Time library
 chrono = { version = "0.4.42", features = ["serde"] }
@@ -51,3 +51,8 @@ arrayvec = { version = "0.7", features = ["serde"] }
 # Logging
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
+
+[profile.dev]
+# line tables keep backtraces while avoiding the cost of generating + linking full debuginfo
+debug = "line-tables-only"
+opt-level = 0
