@@ -9,3 +9,5 @@ Cargo.lock
 *.txt
 *.log
 /deploy
+/.cargo
+/.claude
