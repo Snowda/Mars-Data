@@ -1,0 +1,26 @@
+name: cargo-deny
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ '**/Cargo.toml', '**/Cargo.lock', '**/deny.toml', '.github/workflows/cargo-deny.yml' ]
+  pull_request:
+    branches: [ main ]
+    paths: [ '**/Cargo.toml', '**/Cargo.lock', '**/deny.toml', '.github/workflows/cargo-deny.yml' ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Software Composition Analysis: scan the dependency tree for known security
+  # vulnerabilities (RustSec), disallowed licenses, and banned crates. Runs as
+  # plain cargo, so it works on private repos without GitHub Advanced Security.
+  cargo-deny:
+    name: SCA / cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install cargo-deny
+      run: cargo install cargo-deny --locked
+    - name: Check dependencies
+      run: cargo deny check
