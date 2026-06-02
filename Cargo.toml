@@ -56,3 +56,9 @@ tracing-subscriber = "0.3.23"
 # line tables keep backtraces while avoiding the cost of generating + linking full debuginfo
 debug = "line-tables-only"
 opt-level = 0
+
+[lints.clippy]
+# Reconcile clippy defaults with the project's explicit-return convention (migrated from
+# the former Cranky.toml when the project moved off cargo-cranky to plain cargo clippy).
+needless_return = "allow"
+redundant_closure = "allow"
