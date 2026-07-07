@@ -1,10 +1,12 @@
 use std::fmt::{self, Display, Formatter};
+use std::sync::Once;
 use std::time::Duration;
 
 use arrayvec::ArrayString;
 use chrono::NaiveDate;
 use chrono::NaiveTime;
 use reqwest::StatusCode;
+use rustls::crypto::ring;
 use serde::{Deserialize, Serialize};
 use serde_json::value::Value;
 use tracing::info;
@@ -318,7 +320,19 @@ impl WeatherSample {
     }
 }
 
+static INSTALL_CRYPTO_PROVIDER: Once = Once::new();
+
+// reqwest (rustls-no-provider) resolves TLS via the process-default CryptoProvider.
+// Install ring once; Err means one is already installed, which is fine.
+fn ensure_crypto_provider() {
+    INSTALL_CRYPTO_PROVIDER.call_once(|| {
+        let _ = ring::default_provider().install_default();
+    });
+}
+
 pub async fn load_weather_data(config: &WeatherConfig) -> Result<WeatherSample, String> { // TODO typed error codes
+    ensure_crypto_provider();
+
     let client_builder = reqwest::Client::builder()
         .gzip(true)
         .timeout(Duration::from_secs(config.request_timeout_secs))
