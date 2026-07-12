@@ -66,3 +66,12 @@ opt-level = 0
 # the former Cranky.toml when the project moved off cargo-cranky to plain cargo clippy).
 needless_return = "allow"
 redundant_closure = "allow"
+
+[profile.coverage]
+inherits = "dev"
+opt-level = 0
+debug = false
+
+[profile.coverage.package."*"]
+opt-level = 0
+debug = false
