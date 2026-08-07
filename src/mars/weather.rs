@@ -3,8 +3,8 @@ use std::sync::Once;
 use std::time::Duration;
 
 use arrayvec::ArrayString;
-use chrono::NaiveDate;
-use chrono::NaiveTime;
+use jiff::civil::Date;
+use jiff::civil::Time;
 use reqwest::StatusCode;
 use rustls::crypto::ring;
 use serde::{Deserialize, Serialize};
@@ -161,7 +161,7 @@ impl Display for Temperature {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WeatherSample {
-    terrestrial_date: Option<NaiveDate>,
+    terrestrial_date: Option<Date>,
     sol: u32,
     min_temp: Option<Temperature>,
     max_temp: Option<Temperature>,
@@ -176,8 +176,8 @@ pub struct WeatherSample {
     atmo_opacity: Option<AtmoOpacity>,
     uv_index: Option<UvIndex>,
     season: Option<ArrayString<32>>,
-    sunrise: Option<NaiveTime>,
-    sunset: Option<NaiveTime>,
+    sunrise: Option<Time>,
+    sunset: Option<Time>,
 }
 
 // Reads a field that may arrive as a JSON number or a numeric string (the MSL
@@ -243,10 +243,10 @@ impl WeatherSample {
     }
 
     fn parse(report: &Value) -> Self {
-        let terrestrial_date: Option<NaiveDate> = report
+        let terrestrial_date: Option<Date> = report
             .get("terrestrial_date")
             .and_then(Value::as_str)
-            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+            .and_then(|s| Date::strptime("%Y-%m-%d", s).ok());
 
         let sol: u32 = parse_f64(report, "sol").unwrap_or(0.0) as u32;
 
@@ -288,15 +288,15 @@ impl WeatherSample {
                 return buffer;
             });
 
-        let sunrise: Option<NaiveTime> = report
+        let sunrise: Option<Time> = report
             .get("sunrise")
             .and_then(Value::as_str)
-            .and_then(|s| NaiveTime::parse_from_str(s, "%H:%M").ok());
+            .and_then(|s| Time::strptime("%H:%M", s).ok());
 
-        let sunset: Option<NaiveTime> = report
+        let sunset: Option<Time> = report
             .get("sunset")
             .and_then(Value::as_str)
-            .and_then(|s| NaiveTime::parse_from_str(s, "%H:%M").ok());
+            .and_then(|s| Time::strptime("%H:%M", s).ok());
 
         return Self {
             terrestrial_date,
@@ -375,8 +375,8 @@ pub async fn load_weather_data(config: &WeatherConfig) -> Result<WeatherSample, 
 #[cfg(test)]
 mod tests {
     use arrayvec::ArrayString;
-    use chrono::NaiveDate;
-    use chrono::NaiveTime;
+    use jiff::civil::Date;
+    use jiff::civil::Time;
     use serde_json::json;
 
     use super::AtmoOpacity;
@@ -388,7 +388,7 @@ mod tests {
 
     fn full_sample() -> WeatherSample {
         return WeatherSample {
-            terrestrial_date: NaiveDate::from_ymd_opt(2025, 9, 10),
+            terrestrial_date: Date::new(2025, 9, 10).ok(),
             sol: 100,
             min_temp: Some(Temperature::from_celsius(-80.0)),
             max_temp: Some(Temperature::from_celsius(-10.0)),
@@ -403,8 +403,8 @@ mod tests {
             atmo_opacity: Some(AtmoOpacity::Sunny),
             uv_index: Some(UvIndex::Moderate),
             season: Some(ArrayString::from("month 5").unwrap()),
-            sunrise: NaiveTime::from_hms_opt(6, 0, 0),
-            sunset: NaiveTime::from_hms_opt(18, 0, 0),
+            sunrise: Time::new(6, 0, 0, 0).ok(),
+            sunset: Time::new(18, 0, 0, 0).ok(),
         };
     }
 
@@ -546,7 +546,7 @@ mod tests {
 
         let sample = WeatherSample::parse(&report);
 
-        assert_eq!(sample.terrestrial_date, NaiveDate::from_ymd_opt(2025, 9, 10));
+        assert_eq!(sample.terrestrial_date, Date::new(2025, 9, 10).ok());
         assert_eq!(sample.sol, 100);
         assert_eq!(sample.pressure, Some(750.0));
         assert_eq!(sample.pressure_change_direction, Some(PressureDirection::Rising));
@@ -557,8 +557,8 @@ mod tests {
         assert_eq!(sample.atmo_opacity, Some(AtmoOpacity::Sunny));
         assert_eq!(sample.uv_index, Some(UvIndex::Moderate));
         assert_eq!(sample.season, Some(ArrayString::from("month 5").unwrap()));
-        assert_eq!(sample.sunrise, NaiveTime::from_hms_opt(6, 0, 0));
-        assert_eq!(sample.sunset, NaiveTime::from_hms_opt(18, 0, 0));
+        assert_eq!(sample.sunrise, Time::new(6, 0, 0, 0).ok());
+        assert_eq!(sample.sunset, Time::new(18, 0, 0, 0).ok());
         match &sample.min_temp {
             Some(temp) => assert_eq!(temp.celsius, -80.0),
             None => panic!("min_temp should be populated"),

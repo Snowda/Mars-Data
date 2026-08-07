@@ -1,4 +1,4 @@
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use mars_data::mars::calculations::{mars_comms_delay, mars_comms_return_delay};
 
 const SPEED_OF_LIGHT_M_PER_S: f64 = 299_792_458.0;
@@ -10,7 +10,7 @@ const RETURN_DELAY_TOLERANCE: f64 = 2.1;
 #[test]
 fn test_mars_comms_delay_fixed_date() {
     // Using a fixed date for deterministic testing
-    let test_date = Utc.with_ymd_and_hms(2025, 9, 10, 12, 0, 0).unwrap();
+    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse().unwrap();
     let delay = mars_comms_delay(Some(test_date));
     
     // The delay should be a positive number
@@ -43,7 +43,7 @@ fn test_mars_comms_delay_none_param() {
 #[test]
 fn test_mars_comms_return_delay() {
     // Using a fixed date for deterministic testing
-    let test_date = Utc.with_ymd_and_hms(2025, 9, 10, 12, 0, 0).unwrap();
+    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse().unwrap();
     let delay = mars_comms_return_delay(Some(test_date));
     
     // The return delay should be greater than or equal to the one-way delay
@@ -69,7 +69,7 @@ fn test_mars_comms_return_delay_none_param() {
 #[test]
 fn test_relation_between_comms_delay_and_return_delay() {
     // Using a fixed date for deterministic testing
-    let test_date = Utc.with_ymd_and_hms(2025, 9, 10, 12, 0, 0).unwrap();
+    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse().unwrap();
     
     let one_way_delay = mars_comms_delay(Some(test_date));
     let return_delay = mars_comms_return_delay(Some(test_date));
@@ -87,7 +87,7 @@ fn test_unit_analysis() {
     // This test will help understand what units are being used in the calculations
     
     // Get the delay in whatever unit the function returns
-    let test_date = Utc.with_ymd_and_hms(2025, 9, 10, 12, 0, 0).unwrap();
+    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse().unwrap();
     let delay = mars_comms_delay(Some(test_date));
     
     // The comment in the code says the result is in microseconds
