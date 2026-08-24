@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::mars::config::{Config, WeatherConfig};
 use crate::mars::weather::{WeatherSample, load_weather_data};
@@ -20,6 +20,15 @@ type WeatherReceiver = watch::Receiver<Option<WeatherSample>>;
 
 pub async fn serve(config: Config) -> Result<(), String> {
     let bind_addr: SocketAddr = config.server.bind_addr();
+
+    if bind_addr.ip().is_unspecified() {
+        warn!(
+            "Binding {} exposes the unauthenticated API on all network interfaces; \
+             set server.host to 127.0.0.1 to restrict to loopback",
+            bind_addr
+        );
+    }
+
     let refresh_interval_secs: u64 = config.server.refresh_interval_secs;
     let weather_config: WeatherConfig = config.weather;
 

@@ -6,7 +6,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use serde::Deserialize;
 
 const CONFIG_PATH: &str = "config.toml";
-const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+// Loopback by default so the API is not exposed on all interfaces without the
+// operator explicitly opting in (set server.host = "0.0.0.0" for public serving).
+const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const DEFAULT_PORT: u16 = 3000;
 const DEFAULT_REFRESH_INTERVAL_SECS: u64 = 3600;
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 5;
@@ -131,10 +133,20 @@ mod tests {
     }
 
     #[test]
-    fn default_binds_all_interfaces_on_port_3000() {
+    fn default_binds_loopback_on_port_3000() {
         let config: Config = Config::default();
-        let expected: SocketAddr = "0.0.0.0:3000".parse().unwrap();
+        let expected: SocketAddr = "127.0.0.1:3000".parse().unwrap();
         assert_eq!(config.server.bind_addr(), expected);
+    }
+
+    #[test]
+    fn loopback_default_is_not_unspecified_but_explicit_zero_host_is() {
+        // serve() warns when the bind address is unspecified (all interfaces);
+        // this locks both directions of that guard's condition.
+        assert!(!Config::default().server.bind_addr().ip().is_unspecified());
+        let exposed: Config = Config::from_toml_str("[server]\nhost = \"0.0.0.0\"").unwrap();
+        assert!(exposed.server.bind_addr().ip().is_unspecified());
+        assert_eq!(exposed.server.bind_addr().port(), 3000);
     }
 
     #[test]
@@ -148,7 +160,7 @@ mod tests {
     #[test]
     fn partial_config_overrides_only_named_fields() {
         let config: Config = Config::from_toml_str("[server]\nport = 5000").unwrap();
-        let expected: SocketAddr = "0.0.0.0:5000".parse().unwrap();
+        let expected: SocketAddr = "127.0.0.1:5000".parse().unwrap();
         assert_eq!(config.server.bind_addr(), expected);
         assert_eq!(config.server.refresh_interval_secs, DEFAULT_REFRESH_INTERVAL_SECS);
         assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT_SECS);

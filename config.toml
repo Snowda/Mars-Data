@@ -1,6 +1,7 @@
 [server]
-# Host the weather API binds to. Use "0.0.0.0" to listen on all interfaces.
-host = "0.0.0.0"
+# Host the weather API binds to. Defaults to loopback; set "0.0.0.0" to listen
+# on all interfaces (the API is unauthenticated, so only expose it deliberately).
+host = "127.0.0.1"
 # Port the weather API binds to.
 port = 3000
 # How often the `serve` command re-fetches the latest sol, in seconds.
