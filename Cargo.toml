@@ -61,11 +61,43 @@ tracing-subscriber = "0.3.23"
 debug = "line-tables-only"
 opt-level = 0
 
+[lints.rust]
+# No unsafe anywhere in the tree (forbid blocks even a local #[allow] opt-in).
+unsafe_code = "forbid"
+
 [lints.clippy]
-# Reconcile clippy defaults with the project's explicit-return convention (migrated from
-# the former Cranky.toml when the project moved off cargo-cranky to plain cargo clippy).
+# Reconcile clippy defaults with the project's explicit-return convention.
 needless_return = "allow"
-redundant_closure = "allow"
+
+# Complexity lints (allow-by-default in clippy's nursery/pedantic groups).
+cognitive_complexity = "warn"
+too_many_lines = "warn"
+too_many_arguments = "warn"
+type_complexity = "warn"
+excessive_nesting = "warn"
+# Panic-macro and stray-stdio bans (CLI bins re-opt-in with a scoped #[allow]).
+unreachable = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+# Complexity / maintainability signals.
+missing_const_for_fn = "warn"
+too_long_first_doc_paragraph = "warn"
+# No unwrap/expect in application code (tests re-opt-in via clippy.toml).
+unwrap_used = "deny"
+expect_used = "deny"
+# A held lock (std or parking_lot) across an .await is a deadlock risk.
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+# Explicit imports over glob imports.
+wildcard_imports = "warn"
+# Flag lossy/silent numeric casts.
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_lossless = "warn"
+cast_precision_loss = "warn"
+# Avoid needless clones.
+redundant_clone = "warn"
+clone_on_ref_ptr = "warn"
 
 [profile.coverage]
 inherits = "dev"
