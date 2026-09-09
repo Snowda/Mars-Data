@@ -84,6 +84,9 @@ async fn weather(State(rx): State<WeatherReceiver>) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+    use std::net::IpAddr;
+
     use axum::extract::State;
     use axum::http::StatusCode;
     use serde_json::json;
@@ -94,7 +97,7 @@ mod tests {
     use crate::mars::config::{Config, ServerConfig, WeatherConfig};
     use crate::mars::weather::WeatherSample;
 
-    fn sample() -> WeatherSample {
+    fn sample() -> Result<WeatherSample, serde_json::Error> {
         let value = json!({
             "terrestrial_date": "2025-09-10",
             "sol": 100,
@@ -114,7 +117,7 @@ mod tests {
             "sunrise": "06:00:00",
             "sunset": "18:00:00"
         });
-        return serde_json::from_value(value).unwrap();
+        return serde_json::from_value(value);
     }
 
     #[tokio::test]
@@ -130,22 +133,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn weather_returns_ok_with_data() {
-        let (_tx, rx) = watch::channel::<Option<WeatherSample>>(Some(sample()));
+    async fn weather_returns_ok_with_data() -> Result<(), serde_json::Error> {
+        let (_tx, rx) = watch::channel::<Option<WeatherSample>>(Some(sample()?));
         let response = weather(State(rx)).await;
         assert_eq!(response.status(), StatusCode::OK);
+        return Ok(());
     }
 
     #[tokio::test]
-    async fn serve_errors_when_address_in_use() {
+    async fn serve_errors_when_address_in_use() -> Result<(), io::Error> {
         // Occupy a port, then ask the server to bind the same one so the bind
         // fails deterministically without depending on an external network.
-        let occupied: TcpListener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port: u16 = occupied.local_addr().unwrap().port();
+        let occupied: TcpListener = TcpListener::bind("127.0.0.1:0").await?;
+        let port: u16 = occupied.local_addr()?.port();
 
         let config: Config = Config {
             server: ServerConfig {
-                host: "127.0.0.1".parse().unwrap(),
+                host: IpAddr::from([127, 0, 0, 1]),
                 port,
                 refresh_interval_secs: 3600,
             },
@@ -154,5 +158,6 @@ mod tests {
 
         let result: Result<(), String> = serve(config).await;
         assert!(result.is_err());
+        return Ok(());
     }
 }

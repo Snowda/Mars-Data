@@ -8,9 +8,9 @@ const SECONDS_PER_MINUTE: f64 = 60.0;
 const RETURN_DELAY_TOLERANCE: f64 = 2.1;
 
 #[test]
-fn test_mars_comms_delay_fixed_date() {
+fn test_mars_comms_delay_fixed_date() -> Result<(), jiff::Error> {
     // Using a fixed date for deterministic testing
-    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse().unwrap();
+    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse()?;
     let delay = mars_comms_delay(Some(test_date));
     
     // The delay should be a positive number
@@ -26,6 +26,7 @@ fn test_mars_comms_delay_fixed_date() {
 
     // Using a very broad range since we're not sure of the exact unit
     assert!(delay < 1.0, "Delay should be less than 1.0 in whatever unit it's using");
+    return Ok(());
 }
 
 #[test]
@@ -41,9 +42,9 @@ fn test_mars_comms_delay_none_param() {
 }
 
 #[test]
-fn test_mars_comms_return_delay() {
+fn test_mars_comms_return_delay() -> Result<(), jiff::Error> {
     // Using a fixed date for deterministic testing
-    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse().unwrap();
+    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse()?;
     let delay = mars_comms_return_delay(Some(test_date));
     
     // The return delay should be greater than or equal to the one-way delay
@@ -52,6 +53,7 @@ fn test_mars_comms_return_delay() {
     
     // Using the adjusted expectations
     assert!(delay < 1.0, "Return delay should be less than 1.0 in whatever unit it's using");
+    return Ok(());
 }
 
 #[test]
@@ -67,10 +69,10 @@ fn test_mars_comms_return_delay_none_param() {
 }
 
 #[test]
-fn test_relation_between_comms_delay_and_return_delay() {
+fn test_relation_between_comms_delay_and_return_delay() -> Result<(), jiff::Error> {
     // Using a fixed date for deterministic testing
-    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse().unwrap();
-    
+    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse()?;
+
     let one_way_delay = mars_comms_delay(Some(test_date));
     let return_delay = mars_comms_return_delay(Some(test_date));
 
@@ -80,16 +82,17 @@ fn test_relation_between_comms_delay_and_return_delay() {
     assert!(return_delay >= one_way_delay && return_delay <= RETURN_DELAY_TOLERANCE * one_way_delay,
             "Return delay {} should be between one-way delay {} and twice that value {}",
             return_delay, one_way_delay, RETURN_DELAY_TOLERANCE * one_way_delay);
+    return Ok(());
 }
 
 #[test]
-fn test_unit_analysis() {
+fn test_unit_analysis() -> Result<(), jiff::Error> {
     // This test will help understand what units are being used in the calculations
     
     // Get the delay in whatever unit the function returns
-    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse().unwrap();
+    let test_date: Timestamp = "2025-09-10T12:00:00Z".parse()?;
     let delay = mars_comms_delay(Some(test_date));
-    
+
     // The comment in the code says the result is in microseconds
     // But the actual value is very small (~10^-9), which suggests it might be in different units
     // Let's convert to some common units to see which one makes sense
@@ -103,4 +106,5 @@ fn test_unit_analysis() {
     // The raw value is a non-negative delay, so its derived units must be too.
     assert!(seconds >= 0.0, "Derived seconds should be non-negative");
     assert!(minutes >= 0.0, "Derived minutes should be non-negative");
+    return Ok(());
 }

@@ -51,7 +51,7 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    pub fn bind_addr(&self) -> SocketAddr {
+    pub const fn bind_addr(&self) -> SocketAddr {
         return SocketAddr::new(self.host, self.port);
     }
 }
@@ -122,48 +122,52 @@ mod tests {
     use super::DEFAULT_REQUEST_TIMEOUT_SECS;
 
     #[test]
-    fn parses_all_fields() {
+    fn parses_all_fields() -> Result<(), ConfigError> {
         let toml: &str = "[server]\nhost = \"127.0.0.1\"\nport = 8080\nrefresh_interval_secs = 60\n\n[weather]\nrequest_timeout_secs = 9\nconnect_timeout_secs = 4";
-        let config: Config = Config::from_toml_str(toml).unwrap();
-        let expected_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let config: Config = Config::from_toml_str(toml)?;
+        let expected_addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 8080));
         assert_eq!(config.server.bind_addr(), expected_addr);
         assert_eq!(config.server.refresh_interval_secs, 60);
         assert_eq!(config.weather.request_timeout_secs, 9);
         assert_eq!(config.weather.connect_timeout_secs, 4);
+        return Ok(());
     }
 
     #[test]
     fn default_binds_loopback_on_port_3000() {
         let config: Config = Config::default();
-        let expected: SocketAddr = "127.0.0.1:3000".parse().unwrap();
+        let expected: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 3000));
         assert_eq!(config.server.bind_addr(), expected);
     }
 
     #[test]
-    fn loopback_default_is_not_unspecified_but_explicit_zero_host_is() {
+    fn loopback_default_is_not_unspecified_but_explicit_zero_host_is() -> Result<(), ConfigError> {
         // serve() warns when the bind address is unspecified (all interfaces);
         // this locks both directions of that guard's condition.
         assert!(!Config::default().server.bind_addr().ip().is_unspecified());
-        let exposed: Config = Config::from_toml_str("[server]\nhost = \"0.0.0.0\"").unwrap();
+        let exposed: Config = Config::from_toml_str("[server]\nhost = \"0.0.0.0\"")?;
         assert!(exposed.server.bind_addr().ip().is_unspecified());
         assert_eq!(exposed.server.bind_addr().port(), 3000);
+        return Ok(());
     }
 
     #[test]
-    fn empty_config_uses_all_defaults() {
-        let config: Config = Config::from_toml_str("").unwrap();
+    fn empty_config_uses_all_defaults() -> Result<(), ConfigError> {
+        let config: Config = Config::from_toml_str("")?;
         assert_eq!(config.server.refresh_interval_secs, DEFAULT_REFRESH_INTERVAL_SECS);
         assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT_SECS);
         assert_eq!(config.weather.connect_timeout_secs, DEFAULT_CONNECT_TIMEOUT_SECS);
+        return Ok(());
     }
 
     #[test]
-    fn partial_config_overrides_only_named_fields() {
-        let config: Config = Config::from_toml_str("[server]\nport = 5000").unwrap();
-        let expected: SocketAddr = "127.0.0.1:5000".parse().unwrap();
+    fn partial_config_overrides_only_named_fields() -> Result<(), ConfigError> {
+        let config: Config = Config::from_toml_str("[server]\nport = 5000")?;
+        let expected: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 5000));
         assert_eq!(config.server.bind_addr(), expected);
         assert_eq!(config.server.refresh_interval_secs, DEFAULT_REFRESH_INTERVAL_SECS);
         assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT_SECS);
+        return Ok(());
     }
 
     #[test]
@@ -181,9 +185,10 @@ mod tests {
     }
 
     #[test]
-    fn missing_file_falls_back_to_defaults() {
-        let config: Config = Config::from_path("definitely-not-a-real-config.toml").unwrap();
+    fn missing_file_falls_back_to_defaults() -> Result<(), ConfigError> {
+        let config: Config = Config::from_path("definitely-not-a-real-config.toml")?;
         assert_eq!(config.server.bind_addr(), Config::default().server.bind_addr());
+        return Ok(());
     }
 
     #[test]
@@ -201,7 +206,9 @@ mod tests {
 
     #[test]
     fn parse_error_displays_parse_message() {
-        let error: ConfigError = Config::from_toml_str("= not valid toml").unwrap_err();
+        let Err(error) = Config::from_toml_str("= not valid toml") else {
+            panic!("malformed toml should fail to parse");
+        };
         assert!(format!("{}", error).contains("failed to parse config file"));
     }
 }

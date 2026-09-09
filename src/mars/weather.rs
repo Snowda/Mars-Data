@@ -15,6 +15,11 @@ use crate::mars::config::WeatherConfig;
 
 const WEATHER_URL: &str = "https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json";
 
+// The MSL feed is a few hundred KiB; cap the accepted body well above that so a
+// hostile or compromised upstream cannot exhaust memory with an unbounded body.
+// The cap is on decompressed bytes, so it also bounds gzip-bomb expansion.
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum WindDirection {
     N,
@@ -148,7 +153,7 @@ pub struct Temperature {
 }
 
 impl Temperature {
-    fn from_celsius(celsius: f64) -> Self {
+    const fn from_celsius(celsius: f64) -> Self {
         return Temperature { celsius };
     }
 }
@@ -190,7 +195,15 @@ fn parse_f64(report: &Value, key: &str) -> Option<f64> {
 impl WeatherSample {
     pub fn print_report(&self) -> &Self {
         info!("Date: {:?} (sol {})", self.terrestrial_date, self.sol);
+        self.print_temperatures();
+        self.print_pressure();
+        self.print_atmosphere();
+        self.print_sky();
+        return self;
+    }
 
+    // Air and ground temperature extremes.
+    fn print_temperatures(&self) {
         match &self.min_temp {
             Some(temp) => info!("Today's lowest air temperature was {}", temp),
             None => info!("No minimum air temperature data available"),
@@ -210,7 +223,10 @@ impl WeatherSample {
             Some(temp) => info!("Today's highest ground temperature was {}", temp),
             None => info!("No maximum ground temperature data available"),
         }
+    }
 
+    // Atmospheric pressure trend and Mars season index.
+    fn print_pressure(&self) {
         match &self.pressure_change_direction {
             Some(PressureDirection::Rising)  => info!("Atmospheric pressure is rising."),
             Some(PressureDirection::Falling) => info!("Atmospheric pressure is falling."),
@@ -219,7 +235,10 @@ impl WeatherSample {
 
         info!("Atmospheric pressure is {:?} and {:?}", self.pressure, self.pressure_change_direction);
         info!("Mars season: {:?}", self.mars_season);
+    }
 
+    // Humidity, wind, and UV irradiance.
+    fn print_atmosphere(&self) {
         match &self.abs_humidity {
             Some(humidity) => info!("Humidity: {}", humidity),
             None => info!("No Humidity Available"),
@@ -234,12 +253,14 @@ impl WeatherSample {
             Some(uv) => info!("UV irradiance index: {}", uv),
             None => info!("No UV data available"),
         }
+    }
 
+    // Sky conditions, season label, and sun times.
+    fn print_sky(&self) {
         info!("The weather is {:?}", self.atmo_opacity);
         info!("{:?}", self.season);
         info!("The sun rises at {:?}", self.sunrise);
         info!("The sun sets at {:?}", self.sunset);
-        return self;
     }
 
     fn parse(report: &Value) -> Self {
@@ -248,6 +269,8 @@ impl WeatherSample {
             .and_then(Value::as_str)
             .and_then(|s| Date::strptime("%Y-%m-%d", s).ok());
 
+        // The feed reports sol as a non-negative integer count; truncating the parsed f64 is intended.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let sol: u32 = parse_f64(report, "sol").unwrap_or(0.0) as u32;
 
         let min_temp: Option<Temperature> = parse_f64(report, "min_temp").map(Temperature::from_celsius);
@@ -262,6 +285,8 @@ impl WeatherSample {
             .and_then(Value::as_str)
             .map(|s| if s == "Higher" { PressureDirection::Rising } else { PressureDirection::Falling });
 
+        // ls (solar longitude) is reported as an integer degree; truncating the parsed f64 is intended.
+        #[allow(clippy::cast_possible_truncation)]
         let mars_season: Option<i32> = parse_f64(report, "ls").map(|v| v as i32);
         let abs_humidity: Option<f64> = parse_f64(report, "abs_humidity");
         let wind_speed: Option<f64> = parse_f64(report, "wind_speed");
@@ -283,8 +308,15 @@ impl WeatherSample {
             .get("season")
             .and_then(Value::as_str)
             .map(|s| {
+                // Fill char-by-char and stop when the next char would overflow.
+                // A byte slice at a fixed offset can split a multi-byte UTF-8
+                // char and panic; try_push only ever appends whole chars.
                 let mut buffer: ArrayString<32> = ArrayString::new();
-                buffer.push_str(&s[..s.len().min(buffer.capacity())]);
+                for c in s.chars() {
+                    if buffer.try_push(c).is_err() {
+                        break;
+                    }
+                }
                 return buffer;
             });
 
@@ -344,10 +376,22 @@ pub async fn load_weather_data(config: &WeatherConfig) -> Result<WeatherSample, 
             let resp = client.get(WEATHER_URL).send();
 
             match resp.await { // TODO poll instead of await
-                Ok(response) => {
+                Ok(mut response) => {
                     match response.status() {
                         StatusCode::OK => {
-                            let json: Value = match response.json().await { // TODO replace await with polling
+                            // Read the (decompressed) body chunk-by-chunk with a hard
+                            // cap so an oversized response cannot exhaust memory.
+                            let mut body: Vec<u8> = Vec::new();
+                            while let Some(chunk) =
+                                response.chunk().await.map_err(|e| format!("Failed to read response body: {}", e))?
+                            {
+                                if body.len() + chunk.len() > MAX_RESPONSE_BODY_BYTES {
+                                    return Err(format!("Response body exceeded the {}-byte cap", MAX_RESPONSE_BODY_BYTES));
+                                }
+                                body.extend_from_slice(chunk.as_ref());
+                            }
+
+                            let json: Value = match serde_json::from_slice(&body) {
                                 Ok(parsed_json) => parsed_json,
                                 Err(e) => return Err(format!("Failed to parse JSON response: {}", e)),
                             };
@@ -402,7 +446,7 @@ mod tests {
             wind_direction: Some(WindDirection::NW),
             atmo_opacity: Some(AtmoOpacity::Sunny),
             uv_index: Some(UvIndex::Moderate),
-            season: Some(ArrayString::from("month 5").unwrap()),
+            season: ArrayString::from("month 5").ok(),
             sunrise: Time::new(6, 0, 0, 0).ok(),
             sunset: Time::new(18, 0, 0, 0).ok(),
         };
@@ -458,18 +502,20 @@ mod tests {
     }
 
     #[test]
-    fn weather_sample_json_round_trip_preserves_fields() {
+    fn weather_sample_json_round_trip_preserves_fields() -> Result<(), serde_json::Error> {
         let sample: WeatherSample = full_sample();
-        let encoded: String = serde_json::to_string(&sample).unwrap();
-        let decoded: WeatherSample = serde_json::from_str(&encoded).unwrap();
+        let encoded: String = serde_json::to_string(&sample)?;
+        let decoded: WeatherSample = serde_json::from_str(&encoded)?;
         assert_eq!(decoded, sample);
+        return Ok(());
     }
 
     #[test]
-    fn temperature_serializes_transparently_as_number() {
+    fn temperature_serializes_transparently_as_number() -> Result<(), serde_json::Error> {
         let temp: Temperature = Temperature::from_celsius(-42.5);
-        let encoded: String = serde_json::to_string(&temp).unwrap();
+        let encoded: String = serde_json::to_string(&temp)?;
         assert_eq!(encoded, "-42.5");
+        return Ok(());
     }
 
     #[test]
@@ -556,7 +602,7 @@ mod tests {
         assert_eq!(sample.wind_direction, Some(WindDirection::NW));
         assert_eq!(sample.atmo_opacity, Some(AtmoOpacity::Sunny));
         assert_eq!(sample.uv_index, Some(UvIndex::Moderate));
-        assert_eq!(sample.season, Some(ArrayString::from("month 5").unwrap()));
+        assert_eq!(sample.season, ArrayString::from("month 5").ok());
         assert_eq!(sample.sunrise, Time::new(6, 0, 0, 0).ok());
         assert_eq!(sample.sunset, Time::new(18, 0, 0, 0).ok());
         match &sample.min_temp {
@@ -689,6 +735,32 @@ mod tests {
             let report = json!({ "atmo_opacity": s });
             assert_eq!(WeatherSample::parse(&report).atmo_opacity, Some(expected));
         }
+    }
+
+    #[test]
+    fn parse_multibyte_season_truncates_on_char_boundary() {
+        // 30 ASCII bytes + one 4-byte char = 34 bytes. The old fixed-offset byte
+        // slice panicked here ("byte index 32 is not a char boundary"); the emoji
+        // straddles byte 32 so it must be dropped whole, leaving the 30 ASCII bytes.
+        let season: String = format!("{}{}", "a".repeat(30), '\u{1F680}');
+        let report = json!({ "season": season });
+        let Some(parsed) = WeatherSample::parse(&report).season else {
+            panic!("season should be populated");
+        };
+        assert_eq!(parsed.as_str(), "a".repeat(30));
+        assert!(parsed.len() <= parsed.capacity());
+    }
+
+    #[test]
+    fn parse_multibyte_season_fills_to_exact_capacity() {
+        // Eight 4-byte chars = exactly 32 bytes: all fit, none are split.
+        let season: String = "\u{1F680}".repeat(8);
+        let report = json!({ "season": season });
+        let Some(parsed) = WeatherSample::parse(&report).season else {
+            panic!("season should be populated");
+        };
+        assert_eq!(parsed.len(), 32);
+        assert_eq!(parsed.as_str(), "\u{1F680}".repeat(8));
     }
 
     #[test]
