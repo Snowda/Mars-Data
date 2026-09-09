@@ -1,0 +1,5 @@
+# tracing's info!/warn!/error! macros expand to several branches each (~7
+# cognitive-complexity points per call), so flat sequences of log statements
+# score far above their real branching. Raised from the default 25 to keep the
+# lint catching genuinely complex functions without penalizing logging.
+cognitive-complexity-threshold = 70
