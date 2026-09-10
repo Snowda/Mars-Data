@@ -46,7 +46,7 @@ async fn poll_until_ok(url: &str, attempts: u32) -> Option<reqwest::Response> {
 async fn serve_exposes_health_and_weather_endpoints() -> Result<(), String> {
     // The client below builds before the server's refresh loop installs the
     // process-global provider, so install it here to avoid the startup race.
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let port: u16 = free_port().map_err(|e| format!("failed to reserve a free port: {}", e))?;
     tokio::spawn(serve(test_config(port)));

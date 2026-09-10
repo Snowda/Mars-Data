@@ -6,7 +6,7 @@ use arrayvec::ArrayString;
 use jiff::civil::Date;
 use jiff::civil::Time;
 use reqwest::StatusCode;
-use rustls::crypto::ring;
+use rustls::crypto::aws_lc_rs;
 use serde::{Deserialize, Serialize};
 use serde_json::value::Value;
 use tracing::info;
@@ -192,6 +192,20 @@ fn parse_f64(report: &Value, key: &str) -> Option<f64> {
     return value.as_f64().or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()));
 }
 
+// Same encoding as parse_f64, for fields the feed reports as whole numbers (sol
+// count, solar longitude). Parsing as an integer avoids a lossy f64 truncation.
+fn parse_u32(report: &Value, key: &str) -> Option<u32> {
+    let value: &Value = report.get(key)?;
+    return value.as_u64().and_then(|n| u32::try_from(n).ok())
+        .or_else(|| value.as_str().and_then(|s| s.parse::<u32>().ok()));
+}
+
+fn parse_i32(report: &Value, key: &str) -> Option<i32> {
+    let value: &Value = report.get(key)?;
+    return value.as_i64().and_then(|n| i32::try_from(n).ok())
+        .or_else(|| value.as_str().and_then(|s| s.parse::<i32>().ok()));
+}
+
 impl WeatherSample {
     pub fn print_report(&self) -> &Self {
         info!("Date: {:?} (sol {})", self.terrestrial_date, self.sol);
@@ -269,9 +283,7 @@ impl WeatherSample {
             .and_then(Value::as_str)
             .and_then(|s| Date::strptime("%Y-%m-%d", s).ok());
 
-        // The feed reports sol as a non-negative integer count; truncating the parsed f64 is intended.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let sol: u32 = parse_f64(report, "sol").unwrap_or(0.0) as u32;
+        let sol: u32 = parse_u32(report, "sol").unwrap_or(0);
 
         let min_temp: Option<Temperature> = parse_f64(report, "min_temp").map(Temperature::from_celsius);
         let max_temp: Option<Temperature> = parse_f64(report, "max_temp").map(Temperature::from_celsius);
@@ -285,9 +297,7 @@ impl WeatherSample {
             .and_then(Value::as_str)
             .map(|s| if s == "Higher" { PressureDirection::Rising } else { PressureDirection::Falling });
 
-        // ls (solar longitude) is reported as an integer degree; truncating the parsed f64 is intended.
-        #[allow(clippy::cast_possible_truncation)]
-        let mars_season: Option<i32> = parse_f64(report, "ls").map(|v| v as i32);
+        let mars_season: Option<i32> = parse_i32(report, "ls");
         let abs_humidity: Option<f64> = parse_f64(report, "abs_humidity");
         let wind_speed: Option<f64> = parse_f64(report, "wind_speed");
 
@@ -355,10 +365,10 @@ impl WeatherSample {
 static INSTALL_CRYPTO_PROVIDER: Once = Once::new();
 
 // reqwest (rustls-no-provider) resolves TLS via the process-default CryptoProvider.
-// Install ring once; Err means one is already installed, which is fine.
+// Install aws-lc-rs once; Err means one is already installed, which is fine.
 fn ensure_crypto_provider() {
     INSTALL_CRYPTO_PROVIDER.call_once(|| {
-        let _ = ring::default_provider().install_default();
+        let _ = aws_lc_rs::default_provider().install_default();
     });
 }
 
@@ -704,6 +714,37 @@ mod tests {
         let report = json!({ "sol": "not-a-number" });
         let sample = WeatherSample::parse(&report);
         assert_eq!(sample.sol, 0);
+    }
+
+    #[test]
+    fn parse_sol_from_json_number() {
+        // The feed may emit sol as a bare JSON number rather than a string.
+        let report = json!({ "sol": 100 });
+        let sample = WeatherSample::parse(&report);
+        assert_eq!(sample.sol, 100);
+    }
+
+    #[test]
+    fn parse_fractional_sol_string_falls_back_to_zero() {
+        // sol is an integer count: a fractional string is rejected (not truncated).
+        let report = json!({ "sol": "100.9" });
+        let sample = WeatherSample::parse(&report);
+        assert_eq!(sample.sol, 0);
+    }
+
+    #[test]
+    fn parse_ls_from_json_number() {
+        let report = json!({ "ls": 5 });
+        let sample = WeatherSample::parse(&report);
+        assert_eq!(sample.mars_season, Some(5));
+    }
+
+    #[test]
+    fn parse_fractional_ls_string_yields_none() {
+        // ls is an integer degree: a fractional string is rejected (not truncated).
+        let report = json!({ "ls": "5.5" });
+        let sample = WeatherSample::parse(&report);
+        assert_eq!(sample.mars_season, None);
     }
 
     #[test]
