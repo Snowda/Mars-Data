@@ -1,0 +1,17 @@
+# Release Readiness controls for Mars-Data.
+project = "Mars-Data"
+schema = 1
+
+[[control]]
+id = "mars-data.coverage.line-floor"
+title = "Rust source files meet the configured coverage floor"
+assertion = "Bulwark reports every listed Rust source file at or above this repository's configured line-coverage floor."
+theme = "supply_chain"
+gate = "advisory"
+severity = "medium"
+evidence = ["bulwark config.toml"]
+
+[control.check]
+kind = "coverage"
+files = []
+floor = 80.0
