@@ -1,0 +1,170 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mars-Data weather API",
+    "version": "0.1.4",
+    "summary": "Latest Curiosity (MSL/REMS) surface weather sol, served by `marsdata serve`.",
+    "description": "`marsdata serve` fetches the latest sol from NASA's public Mars Science Laboratory weather feed on startup and then every `server.refresh_interval_secs` (default 3600). It serves the most recent successful fetch. A failed refresh is logged and the previous sample keeps being served. The API is unauthenticated and binds `server.host`:`server.port` (default `127.0.0.1:3000`)."
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:3000", "description": "Default bind address from config.toml." }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Liveness check",
+        "description": "Returns 200 once the process is serving, whether or not weather data has been fetched yet.",
+        "responses": {
+          "200": { "description": "The server is up. Empty body." }
+        }
+      }
+    },
+    "/weather": {
+      "get": {
+        "operationId": "getWeather",
+        "summary": "Latest sol",
+        "description": "The most recently fetched sol. Returns 503 until the first fetch after startup succeeds; after that it always returns the latest successful sample.",
+        "responses": {
+          "200": {
+            "description": "The latest sample.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WeatherSample" },
+                "example": {
+                  "terrestrial_date": "2025-09-10",
+                  "sol": 4650,
+                  "min_temp": -84.0,
+                  "max_temp": -10.0,
+                  "min_ground_temp": -96.0,
+                  "max_ground_temp": 4.0,
+                  "pressure": 777.0,
+                  "pressure_change_direction": "Rising",
+                  "mars_season": 341,
+                  "abs_humidity": null,
+                  "wind_speed": null,
+                  "wind_direction": "Unknown",
+                  "atmo_opacity": "Sunny",
+                  "uv_index": "Moderate",
+                  "season": "Month 12",
+                  "sunrise": "06:46:00",
+                  "sunset": "18:51:00"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No sample has been fetched yet.",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string", "const": "Weather data not yet available" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Temperature": {
+        "type": ["number", "null"],
+        "description": "Degrees Celsius, or null when the feed has no reading."
+      },
+      "WindDirection": {
+        "type": ["string", "null"],
+        "enum": ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "Unknown", null],
+        "description": "Compass point. `Unknown` when the feed has the field but an unrecognised value (including its `--` sentinel); null when the field is absent."
+      },
+      "AtmoOpacity": {
+        "type": ["string", "null"],
+        "enum": ["Sunny", "Cloudy", "Dusty", "Unknown", null],
+        "description": "Sky condition. `Unknown` for an unrecognised value; null when the field is absent."
+      },
+      "UvIndex": {
+        "type": ["string", "null"],
+        "enum": ["Low", "Moderate", "High", "VeryHigh", "Extreme", "Unknown", null],
+        "description": "Local UV irradiance index. `Unknown` for an unrecognised value; null when the field is absent."
+      },
+      "PressureDirection": {
+        "type": ["string", "null"],
+        "enum": ["Rising", "Falling", null],
+        "description": "Pressure trend: `Rising` when the feed reports `Higher`, otherwise `Falling`; null when the field is absent."
+      },
+      "WeatherSample": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "One sol of REMS weather. Every key is always present; a reading the feed lacks or marks with its `--` sentinel is null.",
+        "required": [
+          "terrestrial_date",
+          "sol",
+          "min_temp",
+          "max_temp",
+          "min_ground_temp",
+          "max_ground_temp",
+          "pressure",
+          "pressure_change_direction",
+          "mars_season",
+          "abs_humidity",
+          "wind_speed",
+          "wind_direction",
+          "atmo_opacity",
+          "uv_index",
+          "season",
+          "sunrise",
+          "sunset"
+        ],
+        "properties": {
+          "terrestrial_date": {
+            "type": ["string", "null"],
+            "format": "date",
+            "description": "Earth date of the sol, `YYYY-MM-DD`."
+          },
+          "sol": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295,
+            "description": "Mission sol number. 0 when the feed's value is missing or not a whole number."
+          },
+          "min_temp": { "$ref": "#/components/schemas/Temperature", "description": "Lowest air temperature." },
+          "max_temp": { "$ref": "#/components/schemas/Temperature", "description": "Highest air temperature." },
+          "min_ground_temp": { "$ref": "#/components/schemas/Temperature", "description": "Lowest ground temperature." },
+          "max_ground_temp": { "$ref": "#/components/schemas/Temperature", "description": "Highest ground temperature." },
+          "pressure": {
+            "type": ["number", "null"],
+            "description": "Atmospheric pressure as reported by the feed."
+          },
+          "pressure_change_direction": { "$ref": "#/components/schemas/PressureDirection" },
+          "mars_season": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Solar longitude (the feed's `ls` field) in whole degrees."
+          },
+          "abs_humidity": {
+            "type": ["number", "null"],
+            "description": "Absolute humidity as reported by the feed."
+          },
+          "wind_speed": {
+            "type": ["number", "null"],
+            "description": "Wind speed as reported by the feed."
+          },
+          "wind_direction": { "$ref": "#/components/schemas/WindDirection" },
+          "atmo_opacity": { "$ref": "#/components/schemas/AtmoOpacity" },
+          "uv_index": { "$ref": "#/components/schemas/UvIndex" },
+          "season": {
+            "type": ["string", "null"],
+            "description": "Feed season label (e.g. `Month 12`), truncated on a character boundary to at most 32 UTF-8 bytes."
+          },
+          "sunrise": {
+            "type": ["string", "null"],
+            "description": "Local sunrise time, `HH:MM:SS`."
+          },
+          "sunset": {
+            "type": ["string", "null"],
+            "description": "Local sunset time, `HH:MM:SS`."
+          }
+        }
+      }
+    }
+  }
+}
