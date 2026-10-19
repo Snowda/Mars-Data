@@ -9,3 +9,4 @@ Dockerfile
 *.lcov
 *.txt
 bin/
+infra/
