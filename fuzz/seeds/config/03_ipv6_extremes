@@ -1,0 +1,5 @@
+[server]
+host = "::1"
+port = 0
+[weather]
+request_timeout_secs = 18446744073709551615

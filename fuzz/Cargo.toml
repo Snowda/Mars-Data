@@ -1,0 +1,39 @@
+# Fuzz targets for Mars-Data's untrusted input boundaries (fleet standard: release_gate `default.fuzz`). A workspace
+# member, so it shares target/ and Cargo.lock; libFuzzer links only under `--cfg fuzzing`, on stable, in podman.
+[package]
+name = "mars-data-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+rust-version = "1.96.0"
+
+[dependencies]
+mars-data = { path = ".." }
+serde_json = "1.0.143"
+toml = "1.1.6"
+
+[target.'cfg(fuzzing)'.dependencies]
+libfuzzer-sys = "0.4.13"
+
+[lints.clippy]
+# House style mandates explicit `return` on tail expressions, the inverse of clippy's default.
+needless_return = "allow"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+
+[[bin]]
+name = "weather_body"
+path = "fuzz_targets/weather_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config"
+path = "fuzz_targets/config.rs"
+test = false
+doc = false
+bench = false
