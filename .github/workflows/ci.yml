@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Linux only: the service ships as a Linux container (Containerfile, deploy/k8s.yaml).
+  # The toolchain is pinned by rust-toolchain.toml, so rustup installs the right version + clippy.
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Lint
+      run: cargo clippy --workspace --all-targets --features integration_tests -- -D warnings
+    - name: Test
+      run: cargo test --workspace --verbose --features integration_tests
+
+  # Software Composition Analysis: RustSec advisories, licenses and banned crates.
+  # Plain cargo, so it works on private repos without GitHub Advanced Security.
+  deny:
+    name: SCA / cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install cargo-deny
+      run: cargo install cargo-deny --locked
+    - name: Check dependencies
+      run: cargo deny check
