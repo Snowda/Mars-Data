@@ -2,11 +2,13 @@ target/
 .git/
 .gitignore
 .idea/
-Dockerfile
-.dockerignore
+Containerfile
+.containerignore
 *.md
 *.log
 *.lcov
 *.txt
+*.nix
 bin/
 infra/
+fuzz/
