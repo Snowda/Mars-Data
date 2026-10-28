@@ -74,22 +74,22 @@
       "WindDirection": {
         "type": ["string", "null"],
         "enum": ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "Unknown", null],
-        "description": "Compass point. `Unknown` when the feed has the field but an unrecognised value (including its `--` sentinel); null when the field is absent."
+        "description": "Compass point. `Unknown` for an unrecognised value; null when the field is absent, not a string, or the feed's `--` sentinel."
       },
       "AtmoOpacity": {
         "type": ["string", "null"],
         "enum": ["Sunny", "Cloudy", "Dusty", "Unknown", null],
-        "description": "Sky condition. `Unknown` for an unrecognised value; null when the field is absent."
+        "description": "Sky condition. `Unknown` for an unrecognised value; null when the field is absent, not a string, or the feed's `--` sentinel."
       },
       "UvIndex": {
         "type": ["string", "null"],
         "enum": ["Low", "Moderate", "High", "VeryHigh", "Extreme", "Unknown", null],
-        "description": "Local UV irradiance index. `Unknown` for an unrecognised value; null when the field is absent."
+        "description": "Local UV irradiance index (the feed spells `VeryHigh` as `Very_High`). `Unknown` for an unrecognised value; null when the field is absent, not a string, or the feed's `--` sentinel."
       },
       "PressureDirection": {
         "type": ["string", "null"],
         "enum": ["Rising", "Falling", null],
-        "description": "Pressure trend: `Rising` when the feed reports `Higher`, otherwise `Falling`; null when the field is absent."
+        "description": "Pressure trend: `Rising` when the feed reports `Higher`, `Falling` when it reports `Lower`; null for any other value, including the `--` sentinel, or when the field is absent."
       },
       "WeatherSample": {
         "type": "object",
@@ -138,7 +138,9 @@
           "mars_season": {
             "type": ["integer", "null"],
             "format": "int32",
-            "description": "Solar longitude (the feed's `ls` field) in whole degrees."
+            "minimum": 0,
+            "maximum": 359,
+            "description": "Solar longitude (the feed's `ls` field) in whole degrees; null when the feed's value is outside 0-359."
           },
           "abs_humidity": {
             "type": ["number", "null"],

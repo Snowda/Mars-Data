@@ -1,11 +1,9 @@
-mod mars;
-
 use std::env;
 
-use mars::api::serve;
-use mars::calculations::{mars_comms_delay, mars_comms_return_delay};
-use mars::config::{Config, WeatherConfig};
-use mars::weather::load_weather_data;
+use mars_data::mars::api::serve;
+use mars_data::mars::calculations::{mars_comms_delay, mars_comms_return_delay};
+use mars_data::mars::config::{Config, WeatherConfig};
+use mars_data::mars::weather::load_weather_data;
 use tracing::{error, info};
 
 const SERVE_COMMAND: &str = "serve";

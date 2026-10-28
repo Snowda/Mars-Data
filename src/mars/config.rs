@@ -2,17 +2,41 @@ use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::num::NonZeroU64;
+use std::time::Duration;
 
 use serde::Deserialize;
+use url::Url;
 
 const CONFIG_PATH: &str = "config.toml";
 // Loopback by default so the API is not exposed on all interfaces without the
 // operator explicitly opting in (set server.host = "0.0.0.0" for public serving).
 const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const DEFAULT_PORT: u16 = 3000;
-const DEFAULT_REFRESH_INTERVAL_SECS: u64 = 3600;
-const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 5;
-const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 3;
+const DEFAULT_REFRESH_INTERVAL_SECS: Seconds = Seconds::new(3600).expect("non-zero literal");
+const DEFAULT_REQUEST_TIMEOUT_SECS: Seconds = Seconds::new(5).expect("non-zero literal");
+const DEFAULT_CONNECT_TIMEOUT_SECS: Seconds = Seconds::new(3).expect("non-zero literal");
+const DEFAULT_WEATHER_URL: &str = "https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json";
+
+// Whole seconds, never zero: a zero refresh hammers the upstream and a zero timeout fails every fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct Seconds(NonZeroU64);
+
+impl Seconds {
+    #[must_use]
+    pub const fn new(secs: u64) -> Option<Self> {
+        return match NonZeroU64::new(secs) {
+            Some(non_zero) => Some(Seconds(non_zero)),
+            None => None,
+        };
+    }
+
+    #[must_use]
+    pub const fn as_duration(self) -> Duration {
+        return Duration::from_secs(self.0.get());
+    }
+}
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -47,7 +71,7 @@ pub struct ServerConfig {
     // error rather than a runtime bind failure.
     pub host: IpAddr,
     pub port: u16,
-    pub refresh_interval_secs: u64,
+    pub refresh_interval_secs: Seconds,
 }
 
 impl ServerConfig {
@@ -59,8 +83,17 @@ impl ServerConfig {
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct WeatherConfig {
-    pub request_timeout_secs: u64,
-    pub connect_timeout_secs: u64,
+    // None reads the NASA MSL feed. A Url, not a String, so a malformed override fails at load.
+    pub url: Option<Url>,
+    pub request_timeout_secs: Seconds,
+    pub connect_timeout_secs: Seconds,
+}
+
+impl WeatherConfig {
+    #[must_use]
+    pub fn url(&self) -> &str {
+        return self.url.as_ref().map_or(DEFAULT_WEATHER_URL, Url::as_str);
+    }
 }
 
 impl Default for ServerConfig {
@@ -76,6 +109,7 @@ impl Default for ServerConfig {
 impl Default for WeatherConfig {
     fn default() -> Self {
         return WeatherConfig {
+            url: None,
             request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
             connect_timeout_secs: DEFAULT_CONNECT_TIMEOUT_SECS,
         };
@@ -114,12 +148,17 @@ impl Config {
 mod tests {
     use std::io;
     use std::net::SocketAddr;
+    use std::time::Duration;
+
+    use url::Url;
 
     use super::Config;
     use super::ConfigError;
     use super::DEFAULT_CONNECT_TIMEOUT_SECS;
     use super::DEFAULT_REFRESH_INTERVAL_SECS;
     use super::DEFAULT_REQUEST_TIMEOUT_SECS;
+    use super::DEFAULT_WEATHER_URL;
+    use super::Seconds;
 
     #[test]
     fn parses_all_fields() -> Result<(), ConfigError> {
@@ -127,9 +166,32 @@ mod tests {
         let config: Config = Config::from_toml_str(toml)?;
         let expected_addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 8080));
         assert_eq!(config.server.bind_addr(), expected_addr);
-        assert_eq!(config.server.refresh_interval_secs, 60);
-        assert_eq!(config.weather.request_timeout_secs, 9);
-        assert_eq!(config.weather.connect_timeout_secs, 4);
+        assert_eq!(config.server.refresh_interval_secs.as_duration(), Duration::from_secs(60));
+        assert_eq!(config.weather.request_timeout_secs.as_duration(), Duration::from_secs(9));
+        assert_eq!(config.weather.connect_timeout_secs.as_duration(), Duration::from_secs(4));
+        return Ok(());
+    }
+
+    #[test]
+    fn seconds_rejects_zero_and_converts_to_duration() {
+        assert_eq!(Seconds::new(0), None, "zero is not a usable interval or timeout");
+        assert_eq!(Seconds::new(7).map(Seconds::as_duration), Some(Duration::from_secs(7)));
+    }
+
+    #[test]
+    fn weather_url_defaults_to_the_nasa_msl_feed() -> Result<(), url::ParseError> {
+        let config: Config = Config::default();
+        assert_eq!(config.weather.url(), DEFAULT_WEATHER_URL);
+        // The default is only a &str in code, so prove it parses the way an override would.
+        assert_eq!(Url::parse(DEFAULT_WEATHER_URL)?.as_str(), DEFAULT_WEATHER_URL);
+        return Ok(());
+    }
+
+    #[test]
+    fn weather_url_override_replaces_the_default() -> Result<(), ConfigError> {
+        let config: Config = Config::from_toml_str("[weather]\nurl = \"http://127.0.0.1:8080/feed\"")?;
+        assert_eq!(config.weather.url(), "http://127.0.0.1:8080/feed");
+        assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT_SECS, "other fields keep defaults");
         return Ok(());
     }
 
@@ -174,6 +236,20 @@ mod tests {
     fn rejects_malformed_host() {
         let result: Result<Config, _> = Config::from_toml_str("[server]\nhost = \"not-an-address\"");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_zero_refresh_interval_and_timeouts() {
+        // Zero refresh hammers the upstream; a zero timeout fails every fetch.
+        ["[server]\nrefresh_interval_secs = 0", "[weather]\nrequest_timeout_secs = 0", "[weather]\nconnect_timeout_secs = 0"]
+            .iter()
+            .for_each(|toml: &&str| assert!(Config::from_toml_str(toml).is_err(), "zero must be rejected at load: {toml}"));
+    }
+
+    #[test]
+    fn rejects_malformed_weather_url() {
+        let result: Result<Config, ConfigError> = Config::from_toml_str("[weather]\nurl = \"not a url\"");
+        assert!(result.is_err(), "a bad upstream URL must fail at load, not on the first fetch");
     }
 
     #[test]

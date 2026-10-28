@@ -5,13 +5,15 @@ use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::time::Duration;
 
 use mars_data::mars::api::serve;
-use mars_data::mars::config::{Config, ServerConfig, WeatherConfig};
+use mars_data::mars::config::{Config, Seconds, ServerConfig, WeatherConfig};
 use mars_data::mars::weather::WeatherSample;
 use reqwest::StatusCode;
 
 const HEALTH_POLL_ATTEMPTS: u32 = 20;
 const WEATHER_POLL_ATTEMPTS: u32 = 30;
 const POLL_INTERVAL_MS: u64 = 500;
+const REQUEST_TIMEOUT: Seconds = Seconds::new(10).expect("non-zero literal");
+const CONNECT_TIMEOUT: Seconds = Seconds::new(5).expect("non-zero literal");
 
 // Reserves an OS-assigned free port, then releases it so the server can bind it.
 fn free_port() -> io::Result<u16> {
@@ -19,14 +21,14 @@ fn free_port() -> io::Result<u16> {
     return Ok(listener.local_addr()?.port());
 }
 
-const fn test_config(port: u16) -> Config {
+fn test_config(port: u16) -> Config {
     return Config {
-        server: ServerConfig {
-            host: IpAddr::V4(Ipv4Addr::LOCALHOST),
-            port,
-            refresh_interval_secs: 3600,
+        server: ServerConfig { host: IpAddr::V4(Ipv4Addr::LOCALHOST), port, ..ServerConfig::default() },
+        weather: WeatherConfig {
+            request_timeout_secs: REQUEST_TIMEOUT,
+            connect_timeout_secs: CONNECT_TIMEOUT,
+            ..WeatherConfig::default()
         },
-        weather: WeatherConfig { request_timeout_secs: 10, connect_timeout_secs: 5 },
     };
 }
 
