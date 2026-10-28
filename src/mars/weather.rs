@@ -1,168 +1,21 @@
-use std::fmt::{self, Display, Formatter};
-use std::sync::Once;
-use std::time::Duration;
+// One sol of MSL weather: the sample type and how it is decoded from the feed.
+mod fetch;
+mod report;
+mod values;
 
 use arrayvec::ArrayString;
 use jiff::civil::Date;
 use jiff::civil::Time;
-use reqwest::StatusCode;
-use rustls::crypto::aws_lc_rs;
+use serde::de::value::{Error as ValueError, StrDeserializer};
+use serde::de::{DeserializeOwned, IntoDeserializer};
 use serde::{Deserialize, Serialize};
 use serde_json::value::Value;
-use tracing::info;
 
-use crate::mars::config::WeatherConfig;
+pub use fetch::load_weather_data;
+pub use values::{AtmoOpacity, PressureDirection, SolarLongitude, Temperature, UvIndex, WindDirection};
 
-const WEATHER_URL: &str = "https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json";
-
-// The MSL feed is a few hundred KiB; cap the accepted body well above that so a
-// hostile or compromised upstream cannot exhaust memory with an unbounded body.
-// The cap is on decompressed bytes, so it also bounds gzip-bomb expansion.
-const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum WindDirection {
-    N,
-    NE,
-    E,
-    SE,
-    S,
-    SW,
-    W,
-    NW,
-    Unknown,
-}
-
-impl WindDirection {
-    fn parse(s: &str) -> Self {
-        return match s {
-            "N"  => WindDirection::N,
-            "NE" => WindDirection::NE,
-            "E"  => WindDirection::E,
-            "SE" => WindDirection::SE,
-            "S"  => WindDirection::S,
-            "SW" => WindDirection::SW,
-            "W"  => WindDirection::W,
-            "NW" => WindDirection::NW,
-            _    => WindDirection::Unknown,
-        };
-    }
-}
-
-impl Display for WindDirection {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        return match self {
-            WindDirection::N       => write!(f, "N"),
-            WindDirection::NE      => write!(f, "NE"),
-            WindDirection::E       => write!(f, "E"),
-            WindDirection::SE      => write!(f, "SE"),
-            WindDirection::S       => write!(f, "S"),
-            WindDirection::SW      => write!(f, "SW"),
-            WindDirection::W       => write!(f, "W"),
-            WindDirection::NW      => write!(f, "NW"),
-            WindDirection::Unknown => write!(f, "Unknown"),
-        };
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum AtmoOpacity {
-    Sunny,
-    Cloudy,
-    Dusty,
-    Unknown,
-}
-
-impl AtmoOpacity {
-    fn parse(s: &str) -> Self {
-        return match s {
-            "Sunny" => AtmoOpacity::Sunny,
-            "Cloudy" => AtmoOpacity::Cloudy,
-            "Dusty" => AtmoOpacity::Dusty,
-            _ => AtmoOpacity::Unknown,
-        };
-    }
-}
-
-impl Display for AtmoOpacity {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        return match self {
-            AtmoOpacity::Sunny   => write!(f, "Sunny"),
-            AtmoOpacity::Cloudy  => write!(f, "Cloudy"),
-            AtmoOpacity::Dusty   => write!(f, "Dusty"),
-            AtmoOpacity::Unknown => write!(f, "Unknown"),
-        };
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum UvIndex {
-    Low,
-    Moderate,
-    High,
-    VeryHigh,
-    Extreme,
-    Unknown,
-}
-
-impl UvIndex {
-    fn parse(s: &str) -> Self {
-        return match s {
-            "Low"       => UvIndex::Low,
-            "Moderate"  => UvIndex::Moderate,
-            "High"      => UvIndex::High,
-            "Very_High" => UvIndex::VeryHigh,
-            "Extreme"   => UvIndex::Extreme,
-            _           => UvIndex::Unknown,
-        };
-    }
-}
-
-impl Display for UvIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        return match self {
-            UvIndex::Low      => write!(f, "Low"),
-            UvIndex::Moderate => write!(f, "Moderate"),
-            UvIndex::High     => write!(f, "High"),
-            UvIndex::VeryHigh => write!(f, "Very High"),
-            UvIndex::Extreme  => write!(f, "Extreme"),
-            UvIndex::Unknown  => write!(f, "Unknown"),
-        };
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum PressureDirection {
-    Rising,
-    Falling,
-}
-
-impl Display for PressureDirection {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        return match self {
-            PressureDirection::Rising  => write!(f, "Rising"),
-            PressureDirection::Falling => write!(f, "Falling"),
-        };
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Temperature {
-    celsius: f64,
-}
-
-impl Temperature {
-    const fn from_celsius(celsius: f64) -> Self {
-        return Temperature { celsius };
-    }
-}
-
-impl Display for Temperature {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        return write!(f, "{} °C", self.celsius);
-    }
-}
+// The feed writes this where it has no reading.
+const NO_READING: &str = "--";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WeatherSample {
@@ -174,7 +27,9 @@ pub struct WeatherSample {
     max_ground_temp: Option<Temperature>,
     pressure: Option<f64>,
     pressure_change_direction: Option<PressureDirection>,
-    mars_season: Option<i32>,
+    // Kept as mars_season on the wire, so the published API does not change.
+    #[serde(rename = "mars_season")]
+    solar_longitude: Option<SolarLongitude>,
     abs_humidity: Option<f64>,
     wind_speed: Option<f64>,
     wind_direction: Option<WindDirection>,
@@ -200,88 +55,21 @@ fn parse_u32(report: &Value, key: &str) -> Option<u32> {
         .or_else(|| value.as_str().and_then(|s| s.parse::<u32>().ok()));
 }
 
-fn parse_i32(report: &Value, key: &str) -> Option<i32> {
-    let value: &Value = report.get(key)?;
-    return value.as_i64().and_then(|n| i32::try_from(n).ok())
-        .or_else(|| value.as_str().and_then(|s| s.parse::<i32>().ok()));
+// A string field the feed reported: present, a string, and not the NO_READING sentinel.
+fn feed_str<'a>(report: &'a Value, key: &str) -> Option<&'a str> {
+    return report.get(key).and_then(Value::as_str).filter(|s: &&str| *s != NO_READING);
+}
+
+// Decodes a feed label through the enum's serde names and aliases.
+fn feed_enum<T: DeserializeOwned>(report: &Value, key: &str) -> Option<T> {
+    let deserializer: StrDeserializer<'_, ValueError> = feed_str(report, key)?.into_deserializer();
+    return T::deserialize(deserializer).ok();
 }
 
 impl WeatherSample {
-    pub fn print_report(&self) -> &Self {
-        info!("Date: {:?} (sol {})", self.terrestrial_date, self.sol);
-        self.print_temperatures();
-        self.print_pressure();
-        self.print_atmosphere();
-        self.print_sky();
-        return self;
-    }
-
-    // Air and ground temperature extremes.
-    fn print_temperatures(&self) {
-        match &self.min_temp {
-            Some(temp) => info!("Today's lowest air temperature was {}", temp),
-            None => info!("No minimum air temperature data available"),
-        }
-
-        match &self.max_temp {
-            Some(temp) => info!("Today's highest air temperature was {}", temp),
-            None => info!("No maximum air temperature data available"),
-        }
-
-        match &self.min_ground_temp {
-            Some(temp) => info!("Today's lowest ground temperature was {}", temp),
-            None => info!("No minimum ground temperature data available"),
-        }
-
-        match &self.max_ground_temp {
-            Some(temp) => info!("Today's highest ground temperature was {}", temp),
-            None => info!("No maximum ground temperature data available"),
-        }
-    }
-
-    // Atmospheric pressure trend and Mars season index.
-    fn print_pressure(&self) {
-        match &self.pressure_change_direction {
-            Some(PressureDirection::Rising)  => info!("Atmospheric pressure is rising."),
-            Some(PressureDirection::Falling) => info!("Atmospheric pressure is falling."),
-            None => info!("No pressure change direction data available"),
-        }
-
-        info!("Atmospheric pressure is {:?} and {:?}", self.pressure, self.pressure_change_direction);
-        info!("Mars season: {:?}", self.mars_season);
-    }
-
-    // Humidity, wind, and UV irradiance.
-    fn print_atmosphere(&self) {
-        match &self.abs_humidity {
-            Some(humidity) => info!("Humidity: {}", humidity),
-            None => info!("No Humidity Available"),
-        }
-
-        match (&self.wind_speed, &self.wind_direction) {
-            (Some(speed), Some(direction)) => info!("The wind is blowing {} at a speed of {} km/s", direction, speed),
-            _ => info!("No wind data available"),
-        }
-
-        match &self.uv_index {
-            Some(uv) => info!("UV irradiance index: {}", uv),
-            None => info!("No UV data available"),
-        }
-    }
-
-    // Sky conditions, season label, and sun times.
-    fn print_sky(&self) {
-        info!("The weather is {:?}", self.atmo_opacity);
-        info!("{:?}", self.season);
-        info!("The sun rises at {:?}", self.sunrise);
-        info!("The sun sets at {:?}", self.sunset);
-    }
-
     fn parse(report: &Value) -> Self {
-        let terrestrial_date: Option<Date> = report
-            .get("terrestrial_date")
-            .and_then(Value::as_str)
-            .and_then(|s| Date::strptime("%Y-%m-%d", s).ok());
+        let terrestrial_date: Option<Date> =
+            feed_str(report, "terrestrial_date").and_then(|s| Date::strptime("%Y-%m-%d", s).ok());
 
         let sol: u32 = parse_u32(report, "sol").unwrap_or(0);
 
@@ -292,31 +80,19 @@ impl WeatherSample {
 
         let pressure: Option<f64> = parse_f64(report, "pressure");
 
-        let pressure_change_direction: Option<PressureDirection> = report
-            .get("pressure_string")
-            .and_then(Value::as_str)
-            .map(|s| if s == "Higher" { PressureDirection::Rising } else { PressureDirection::Falling });
+        let pressure_change_direction: Option<PressureDirection> = feed_enum(report, "pressure_string");
 
-        let mars_season: Option<i32> = parse_i32(report, "ls");
+        let solar_longitude: Option<SolarLongitude> = parse_u32(report, "ls")
+            .and_then(|degrees: u32| u16::try_from(degrees).ok())
+            .and_then(|degrees: u16| SolarLongitude::try_from(degrees).ok());
         let abs_humidity: Option<f64> = parse_f64(report, "abs_humidity");
         let wind_speed: Option<f64> = parse_f64(report, "wind_speed");
 
-        let wind_direction: Option<WindDirection> = report
-            .get("wind_direction")
-            .map(|v| WindDirection::parse(v.as_str().unwrap_or("")));
+        let wind_direction: Option<WindDirection> = feed_enum(report, "wind_direction");
+        let atmo_opacity: Option<AtmoOpacity> = feed_enum(report, "atmo_opacity");
+        let uv_index: Option<UvIndex> = feed_enum(report, "local_uv_irradiance_index");
 
-        let atmo_opacity: Option<AtmoOpacity> = report
-            .get("atmo_opacity")
-            .map(|v| AtmoOpacity::parse(v.as_str().unwrap_or("")));
-
-        let uv_index: Option<UvIndex> = report
-            .get("local_uv_irradiance_index")
-            .and_then(Value::as_str)
-            .map(UvIndex::parse);
-
-        let season: Option<ArrayString<32>> = report
-            .get("season")
-            .and_then(Value::as_str)
+        let season: Option<ArrayString<32>> = feed_str(report, "season")
             .map(|s| {
                 // Fill char-by-char and stop when the next char would overflow.
                 // A byte slice at a fixed offset can split a multi-byte UTF-8
@@ -330,15 +106,8 @@ impl WeatherSample {
                 return buffer;
             });
 
-        let sunrise: Option<Time> = report
-            .get("sunrise")
-            .and_then(Value::as_str)
-            .and_then(|s| Time::strptime("%H:%M", s).ok());
-
-        let sunset: Option<Time> = report
-            .get("sunset")
-            .and_then(Value::as_str)
-            .and_then(|s| Time::strptime("%H:%M", s).ok());
+        let sunrise: Option<Time> = feed_str(report, "sunrise").and_then(|s| Time::strptime("%H:%M", s).ok());
+        let sunset: Option<Time> = feed_str(report, "sunset").and_then(|s| Time::strptime("%H:%M", s).ok());
 
         return Self {
             terrestrial_date,
@@ -349,7 +118,7 @@ impl WeatherSample {
             max_ground_temp,
             pressure,
             pressure_change_direction,
-            mars_season,
+            solar_longitude,
             abs_humidity,
             wind_speed,
             wind_direction,
@@ -362,67 +131,16 @@ impl WeatherSample {
     }
 }
 
-static INSTALL_CRYPTO_PROVIDER: Once = Once::new();
+// Decodes an MSL feed body into its latest sol. The body is untrusted upstream input (fuzzed in fuzz/).
+pub fn parse_weather_body(body: &[u8]) -> Result<WeatherSample, String> {
+    let json: Value = match serde_json::from_slice(body) {
+        Ok(parsed_json) => parsed_json,
+        Err(e) => return Err(format!("Failed to parse JSON response: {}", e)),
+    };
 
-// reqwest (rustls-no-provider) resolves TLS via the process-default CryptoProvider.
-// Install aws-lc-rs once; Err means one is already installed, which is fine.
-fn ensure_crypto_provider() {
-    INSTALL_CRYPTO_PROVIDER.call_once(|| {
-        let _ = aws_lc_rs::default_provider().install_default();
-    });
-}
-
-pub async fn load_weather_data(config: &WeatherConfig) -> Result<WeatherSample, String> { // TODO typed error codes
-    ensure_crypto_provider();
-
-    let client_builder = reqwest::Client::builder()
-        .gzip(true)
-        .timeout(Duration::from_secs(config.request_timeout_secs))
-        .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
-        .build();
-
-    return match client_builder { // TODO better code style than match chain
-        Ok(client) => {
-            let resp = client.get(WEATHER_URL).send();
-
-            match resp.await { // TODO poll instead of await
-                Ok(mut response) => {
-                    match response.status() {
-                        StatusCode::OK => {
-                            // Read the (decompressed) body chunk-by-chunk with a hard
-                            // cap so an oversized response cannot exhaust memory.
-                            let mut body: Vec<u8> = Vec::new();
-                            while let Some(chunk) =
-                                response.chunk().await.map_err(|e| format!("Failed to read response body: {}", e))?
-                            {
-                                if body.len() + chunk.len() > MAX_RESPONSE_BODY_BYTES {
-                                    return Err(format!("Response body exceeded the {}-byte cap", MAX_RESPONSE_BODY_BYTES));
-                                }
-                                body.extend_from_slice(chunk.as_ref());
-                            }
-
-                            let json: Value = match serde_json::from_slice(&body) {
-                                Ok(parsed_json) => parsed_json,
-                                Err(e) => return Err(format!("Failed to parse JSON response: {}", e)),
-                            };
-
-                            match json.get("soles").and_then(Value::as_array).and_then(|soles| soles.first()) {
-                                Some(latest) => Ok(WeatherSample::parse(latest)),
-                                None => Err("No sol data found in response".to_string()),
-                            }
-                        },
-                        StatusCode::PAYLOAD_TOO_LARGE => {
-                            Err(format!("Payload too large: Status code {}", StatusCode::PAYLOAD_TOO_LARGE))
-                        },
-                        s => {
-                            Err(format!("Unexpected status code: {}", s))
-                        },
-                    }
-                },
-                Err(error) => Err(format!("Request error: {}", error)),
-            }
-        },
-        Err(error) => Err(format!("Failed to build HTTP client: {}", error)),
+    return match json.get("soles").and_then(Value::as_array).and_then(|soles| soles.first()) {
+        Some(latest) => Ok(WeatherSample::parse(latest)),
+        None => Err("No sol data found in response".to_string()),
     };
 }
 
@@ -431,16 +149,31 @@ mod tests {
     use arrayvec::ArrayString;
     use jiff::civil::Date;
     use jiff::civil::Time;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::AtmoOpacity;
     use super::PressureDirection;
+    use super::SolarLongitude;
     use super::Temperature;
     use super::UvIndex;
     use super::WeatherSample;
     use super::WindDirection;
+    use super::parse_weather_body;
+    use crate::mars::openapi_contract::{self, assert_conforms};
 
-    fn full_sample() -> WeatherSample {
+    fn sample_json(sample: &WeatherSample) -> Value {
+        let Ok(value) = serde_json::to_value(sample) else {
+            panic!("WeatherSample must serialize");
+        };
+        return value;
+    }
+
+    fn longitude(degrees: u16) -> Option<SolarLongitude> {
+        return SolarLongitude::try_from(degrees).ok();
+    }
+
+    // Every field populated; report.rs's tests start from it too.
+    pub fn full_sample() -> WeatherSample {
         return WeatherSample {
             terrestrial_date: Date::new(2025, 9, 10).ok(),
             sol: 100,
@@ -450,7 +183,7 @@ mod tests {
             max_ground_temp: Some(Temperature::from_celsius(10.0)),
             pressure: Some(750.0),
             pressure_change_direction: Some(PressureDirection::Rising),
-            mars_season: Some(5),
+            solar_longitude: longitude(5),
             abs_humidity: Some(0.3),
             wind_speed: Some(12.0),
             wind_direction: Some(WindDirection::NW),
@@ -463,52 +196,25 @@ mod tests {
     }
 
     #[test]
-    fn wind_direction_display_covers_all_variants() {
-        for (direction, expected) in [
-            (WindDirection::N,  "N"),
-            (WindDirection::NE, "NE"),
-            (WindDirection::E,  "E"),
-            (WindDirection::SE, "SE"),
-            (WindDirection::S,  "S"),
-            (WindDirection::SW, "SW"),
-            (WindDirection::W,  "W"),
-            (WindDirection::NW, "NW"),
-            (WindDirection::Unknown, "Unknown"),
-        ] {
-            assert_eq!(format!("{}", direction), expected);
-        }
+    fn populated_sample_matches_the_openapi_schema() {
+        assert_conforms(&openapi_contract::spec(), "WeatherSample", &sample_json(&full_sample()));
     }
 
     #[test]
-    fn atmo_opacity_display_covers_all_variants() {
-        for (opacity, expected) in [
-            (AtmoOpacity::Sunny,  "Sunny"),
-            (AtmoOpacity::Cloudy, "Cloudy"),
-            (AtmoOpacity::Dusty,  "Dusty"),
-            (AtmoOpacity::Unknown, "Unknown"),
-        ] {
-            assert_eq!(format!("{}", opacity), expected);
-        }
+    fn all_missing_sample_matches_the_openapi_schema() {
+        let empty: WeatherSample = WeatherSample::parse(&json!({}));
+        assert_conforms(&openapi_contract::spec(), "WeatherSample", &sample_json(&empty));
     }
 
     #[test]
-    fn uv_index_display_covers_all_variants() {
-        for (uv, expected) in [
-            (UvIndex::Low,      "Low"),
-            (UvIndex::Moderate, "Moderate"),
-            (UvIndex::High,     "High"),
-            (UvIndex::VeryHigh, "Very High"),
-            (UvIndex::Extreme,  "Extreme"),
-            (UvIndex::Unknown,  "Unknown"),
-        ] {
-            assert_eq!(format!("{}", uv), expected);
-        }
-    }
-
-    #[test]
-    fn pressure_direction_display_covers_all_variants() {
-        assert_eq!(format!("{}", PressureDirection::Rising), "Rising");
-        assert_eq!(format!("{}", PressureDirection::Falling), "Falling");
+    fn spec_example_matches_the_schema_and_deserializes() -> Result<(), serde_json::Error> {
+        let spec: Value = openapi_contract::spec();
+        let example: &Value =
+            &spec["paths"]["/weather"]["get"]["responses"]["200"]["content"]["application/json"]["example"];
+        assert_conforms(&spec, "WeatherSample", example);
+        let decoded: WeatherSample = serde_json::from_value(example.clone())?;
+        assert_eq!(&sample_json(&decoded), example, "example survives a round trip unchanged");
+        return Ok(());
     }
 
     #[test]
@@ -521,61 +227,8 @@ mod tests {
     }
 
     #[test]
-    fn temperature_serializes_transparently_as_number() -> Result<(), serde_json::Error> {
-        let temp: Temperature = Temperature::from_celsius(-42.5);
-        let encoded: String = serde_json::to_string(&temp)?;
-        assert_eq!(encoded, "-42.5");
-        return Ok(());
-    }
-
-    #[test]
-    fn temperature_from_celsius_stores_value() {
-        let t = Temperature::from_celsius(20.0);
-        assert_eq!(t.celsius, 20.0);
-    }
-
-    #[test]
-    fn temperature_display_formats_celsius() {
-        let t = Temperature::from_celsius(-12.5);
-        assert_eq!(format!("{}", t), "-12.5 °C");
-    }
-
-    #[test]
-    fn print_report_returns_same_instance() {
-        let sample = full_sample();
-        let returned = sample.print_report();
-        assert!(std::ptr::eq(returned, &sample));
-    }
-
-    #[test]
-    fn print_report_handles_all_none_optionals() {
-        let mut sample = full_sample();
-        sample.min_temp = None;
-        sample.max_temp = None;
-        sample.min_ground_temp = None;
-        sample.max_ground_temp = None;
-        sample.pressure_change_direction = None;
-        sample.abs_humidity = None;
-        sample.wind_speed = None;
-        sample.wind_direction = None;
-        sample.uv_index = None;
-        let returned = sample.print_report();
-        assert!(std::ptr::eq(returned, &sample));
-    }
-
-    #[test]
-    fn print_report_reports_falling_pressure() {
-        let mut sample = full_sample();
-        sample.pressure_change_direction = Some(PressureDirection::Falling);
-        assert!(std::ptr::eq(sample.print_report(), &sample));
-    }
-
-    #[test]
-    fn print_report_handles_partial_wind_data() {
-        let mut sample = full_sample();
-        sample.wind_speed = Some(5.0);
-        sample.wind_direction = None;
-        assert!(std::ptr::eq(sample.print_report(), &sample));
+    fn solar_longitude_keeps_the_mars_season_wire_name() {
+        assert_eq!(sample_json(&full_sample())["mars_season"], json!(5), "the wire name must not change");
     }
 
     #[test]
@@ -606,7 +259,7 @@ mod tests {
         assert_eq!(sample.sol, 100);
         assert_eq!(sample.pressure, Some(750.0));
         assert_eq!(sample.pressure_change_direction, Some(PressureDirection::Rising));
-        assert_eq!(sample.mars_season, Some(5));
+        assert_eq!(sample.solar_longitude, longitude(5));
         assert_eq!(sample.abs_humidity, Some(0.3));
         assert_eq!(sample.wind_speed, Some(12.0));
         assert_eq!(sample.wind_direction, Some(WindDirection::NW));
@@ -615,22 +268,10 @@ mod tests {
         assert_eq!(sample.season, ArrayString::from("month 5").ok());
         assert_eq!(sample.sunrise, Time::new(6, 0, 0, 0).ok());
         assert_eq!(sample.sunset, Time::new(18, 0, 0, 0).ok());
-        match &sample.min_temp {
-            Some(temp) => assert_eq!(temp.celsius, -80.0),
-            None => panic!("min_temp should be populated"),
-        }
-        match &sample.max_temp {
-            Some(temp) => assert_eq!(temp.celsius, -10.0),
-            None => panic!("max_temp should be populated"),
-        }
-        match &sample.min_ground_temp {
-            Some(temp) => assert_eq!(temp.celsius, -96.0),
-            None => panic!("min_ground_temp should be populated"),
-        }
-        match &sample.max_ground_temp {
-            Some(temp) => assert_eq!(temp.celsius, 10.0),
-            None => panic!("max_ground_temp should be populated"),
-        }
+        assert_eq!(sample.min_temp, Some(Temperature::from_celsius(-80.0)));
+        assert_eq!(sample.max_temp, Some(Temperature::from_celsius(-10.0)));
+        assert_eq!(sample.min_ground_temp, Some(Temperature::from_celsius(-96.0)));
+        assert_eq!(sample.max_ground_temp, Some(Temperature::from_celsius(10.0)));
     }
 
     #[test]
@@ -647,7 +288,7 @@ mod tests {
         assert!(sample.max_ground_temp.is_none());
         assert!(sample.pressure.is_none());
         assert!(sample.pressure_change_direction.is_none());
-        assert!(sample.mars_season.is_none());
+        assert!(sample.solar_longitude.is_none());
         assert!(sample.abs_humidity.is_none());
         assert!(sample.wind_speed.is_none());
         assert!(sample.wind_direction.is_none());
@@ -696,10 +337,22 @@ mod tests {
     }
 
     #[test]
-    fn parse_unavailable_wind_direction_maps_to_unknown() {
-        let report = json!({ "wind_direction": "--" });
-        let sample = WeatherSample::parse(&report);
-        assert_eq!(sample.wind_direction, Some(WindDirection::Unknown));
+    fn parse_sentinel_enum_fields_yield_none() {
+        // "--" marks a missing reading, the same as for the numeric fields; Unknown is for values we do not recognise.
+        let report: Value = json!({
+            "wind_direction": "--", "atmo_opacity": "--", "local_uv_irradiance_index": "--", "pressure_string": "--"
+        });
+        let sample: WeatherSample = WeatherSample::parse(&report);
+        assert_eq!(sample.wind_direction, None);
+        assert_eq!(sample.atmo_opacity, None);
+        assert_eq!(sample.uv_index, None);
+        assert_eq!(sample.pressure_change_direction, None, "a missing trend is not a falling one");
+    }
+
+    #[test]
+    fn parse_unrecognised_pressure_string_yields_none() {
+        let sample: WeatherSample = WeatherSample::parse(&json!({ "pressure_string": "Sideways" }));
+        assert_eq!(sample.pressure_change_direction, None, "only Higher and Lower name a trend");
     }
 
     #[test]
@@ -736,7 +389,7 @@ mod tests {
     fn parse_ls_from_json_number() {
         let report = json!({ "ls": 5 });
         let sample = WeatherSample::parse(&report);
-        assert_eq!(sample.mars_season, Some(5));
+        assert_eq!(sample.solar_longitude, longitude(5));
     }
 
     #[test]
@@ -744,7 +397,17 @@ mod tests {
         // ls is an integer degree: a fractional string is rejected (not truncated).
         let report = json!({ "ls": "5.5" });
         let sample = WeatherSample::parse(&report);
-        assert_eq!(sample.mars_season, None);
+        assert_eq!(sample.solar_longitude, None);
+    }
+
+    #[test]
+    fn parse_ls_outside_one_orbit_yields_none() {
+        let at = |ls: Value| -> Option<SolarLongitude> { return WeatherSample::parse(&json!({ "ls": ls })).solar_longitude };
+        assert!(longitude(359).is_some(), "359 is the last degree before the orbit wraps");
+        assert_eq!(at(json!(359)), longitude(359));
+        assert_eq!(at(json!(360)), None, "360 degrees is 0 again, so the feed must not report it");
+        assert_eq!(at(json!("-1")), None, "solar longitude is never negative");
+        assert_eq!(at(json!(70_000)), None, "a value past u16 must not wrap into range");
     }
 
     #[test]
@@ -816,6 +479,32 @@ mod tests {
         ] {
             let report = json!({ "local_uv_irradiance_index": s });
             assert_eq!(WeatherSample::parse(&report).uv_index, Some(expected));
+        }
+    }
+
+    #[test]
+    fn parse_weather_body_takes_the_first_sol() -> Result<(), String> {
+        let body: &[u8] = br#"{"soles":[{"sol":"4000","wind_direction":"N"},{"sol":"3999"}]}"#;
+        let sample: WeatherSample = parse_weather_body(body)?;
+        assert_eq!(sample.sol, 4000);
+        assert_eq!(sample.wind_direction, Some(WindDirection::N));
+        return Ok(());
+    }
+
+    #[test]
+    fn parse_weather_body_reads_json_floats_exactly() -> Result<(), String> {
+        // Fuzz regression (weather_body/crash-495f…): without serde_json float_roundtrip this lands 1 ULP high.
+        let sample: WeatherSample = parse_weather_body(br#"{"soles":[{"pressure":1.4e+26}]}"#)?;
+        let exact: f64 = "1.4e26".parse::<f64>().map_err(|e| e.to_string())?;
+        assert_eq!(sample.pressure.map(f64::to_bits), Some(exact.to_bits()));
+        return Ok(());
+    }
+
+    #[test]
+    fn parse_weather_body_rejects_invalid_json_and_missing_soles() {
+        assert!(parse_weather_body(b"{\"soles\":").is_err_and(|e| e.starts_with("Failed to parse JSON response")));
+        for body in [&b"{}"[..], br#"{"soles":[]}"#, br#"{"soles":"x"}"#, b"[]"] {
+            assert_eq!(parse_weather_body(body), Err("No sol data found in response".to_owned()));
         }
     }
 }
