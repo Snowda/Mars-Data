@@ -13,3 +13,11 @@ disallowed-methods = [
     { path = "std::env::set_var", reason = "the process env is Barrel-owned; inject via `barrel run`, do not mutate it" },
     { path = "std::env::remove_var", reason = "the process env is Barrel-owned; inject via `barrel run`, do not mutate it" },
 ]
+
+disallowed-types = [
+    # SipHash (std's default hasher) is slow: use foldhash by default, ahash where a peer picks keys, rapidhash for stable output.
+    { path = "std::collections::HashMap", reason = "SipHash by default; use foldhash::HashMap, ahash::AHashMap or a rapidhash map" },
+    { path = "std::collections::HashSet", reason = "SipHash by default; use foldhash::HashSet, ahash::AHashSet or a rapidhash set" },
+    { path = "std::hash::RandomState", reason = "SipHash; use the foldhash, ahash or rapidhash state" },
+    { path = "std::hash::DefaultHasher", reason = "SipHash; use rapidhash::fast::RapidHasher for stable hashes" },
+]
