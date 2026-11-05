@@ -1,3 +1,6 @@
+use std::error::Error;
+use std::fmt::{self, Display, Formatter};
+use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -23,7 +26,31 @@ const HEALTH_PATH: &str = "/health";
 const WEATHER_PATH: &str = "/weather";
 const NOT_READY_MESSAGE: &str = "Weather data not yet available";
 
-pub async fn serve(config: Config) -> Result<(), String> {
+// Why the server stopped; the refresher task's failures are logged, never returned.
+#[derive(Debug)]
+pub enum ServeError {
+    Bind { addr: SocketAddr, source: io::Error },
+    Serve(io::Error),
+}
+
+impl Display for ServeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        return match self {
+            ServeError::Bind { addr, source } => write!(f, "Failed to bind {}: {}", addr, source),
+            ServeError::Serve(e) => write!(f, "Server error: {}", e),
+        };
+    }
+}
+
+impl Error for ServeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        return match self {
+            ServeError::Bind { source, .. } | ServeError::Serve(source) => Some(source),
+        };
+    }
+}
+
+pub async fn serve(config: Config) -> Result<(), ServeError> {
     let bind_addr: SocketAddr = config.server.bind_addr();
 
     if bind_addr.ip().is_unspecified() {
@@ -48,15 +75,12 @@ pub async fn serve(config: Config) -> Result<(), String> {
 
     let listener: TcpListener = match TcpListener::bind(bind_addr).await {
         Ok(bound) => bound,
-        Err(e) => return Err(format!("Failed to bind {}: {}", bind_addr, e)),
+        Err(source) => return Err(ServeError::Bind { addr: bind_addr, source }),
     };
 
     info!("Serving Mars weather API on {}", bind_addr);
 
-    return match axum::serve(listener, app).await {
-        Ok(()) => Ok(()),
-        Err(e) => Err(format!("Server error: {}", e)),
-    };
+    return axum::serve(listener, app).await.map_err(ServeError::Serve);
 }
 
 // Refreshes the published sample on a fixed interval; the first fetch runs
@@ -81,7 +105,8 @@ async fn health() -> StatusCode {
 }
 
 async fn weather(State(rx): State<WeatherReceiver>) -> Response {
-    return match rx.borrow().clone() {
+    // Serializes under the borrow, so the sample is never copied out of the channel.
+    return match rx.borrow().as_ref() {
         Some(sample) => Json(sample).into_response(),
         None => (StatusCode::SERVICE_UNAVAILABLE, NOT_READY_MESSAGE).into_response(),
     };
@@ -89,19 +114,22 @@ async fn weather(State(rx): State<WeatherReceiver>) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
     use std::io;
-    use std::net::IpAddr;
+    use std::net::{IpAddr, SocketAddr};
 
+    use arrayvec::ArrayString;
     use axum::body::{self, Bytes};
     use axum::extract::State;
     use axum::http::StatusCode;
-    use serde_json::{Map, Value, json};
+    use serde_json::{Value, json};
     use tokio::net::TcpListener;
     use tokio::sync::watch;
 
-    use super::{HEALTH_PATH, NOT_READY_MESSAGE, WEATHER_PATH, health, serve, weather};
+    use super::{HEALTH_PATH, NOT_READY_MESSAGE, ServeError, WEATHER_PATH, health, serve, weather};
     use crate::mars::config::{Config, ServerConfig, WeatherConfig};
     use crate::mars::openapi_contract::{self, assert_conforms, assert_enum_matches, json_type};
+    use crate::mars::test_support::{MAX_MESSAGE_BYTES, TestError, display};
     use crate::mars::weather::WeatherSample;
 
     const MAX_TEST_BODY_BYTES: usize = 1024;
@@ -113,10 +141,11 @@ mod tests {
     #[test]
     fn spec_documents_exactly_the_served_routes() {
         let spec: Value = openapi_contract::spec();
-        let mut paths: Vec<&str> =
-            spec["paths"].as_object().map(|p| p.keys().map(String::as_str).collect()).unwrap_or_default();
-        paths.sort_unstable();
-        assert_eq!(paths, [HEALTH_PATH, WEATHER_PATH]);
+        let Some(paths) = spec["paths"].as_object() else {
+            panic!("openapi.json must have a paths object");
+        };
+        // serde_json::Map is a BTreeMap here (no preserve_order feature), so its keys come out sorted.
+        assert!(paths.keys().eq([HEALTH_PATH, WEATHER_PATH]), "spec paths differ from the served routes");
     }
 
     #[tokio::test]
@@ -200,14 +229,68 @@ mod tests {
         assert_enum_matches(&openapi_contract::spec(), "PressureDirection", &["Rising"]);
     }
 
+    // Same count as the spec, so only the member-by-member containment can catch it.
+    #[test]
+    #[should_panic(expected = "spec enum differs")]
+    fn contract_rejects_an_enum_with_a_wrong_member() {
+        assert_enum_matches(&openapi_contract::spec(), "PressureDirection", &["Rising", "Sideways"]);
+    }
+
+    #[test]
+    fn contract_accepts_the_enum_in_any_order() {
+        assert_enum_matches(&openapi_contract::spec(), "PressureDirection", &["Falling", "Rising"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "serialized keys differ")]
+    fn contract_rejects_a_payload_with_an_extra_field() {
+        let mut payload: Value = contract_instance();
+        payload["undocumented"] = json!(1);
+        assert_conforms(&openapi_contract::spec(), "WeatherSample", &payload);
+    }
+
+    #[test]
+    #[should_panic(expected = "every serialized field is always present")]
+    fn contract_rejects_a_property_left_out_of_required() {
+        let spec: Value = json!({ "components": { "schemas": { "S": {
+            "properties": { "a": { "type": "integer" }, "b": { "type": "integer" } },
+            "required": ["a"]
+        } } } });
+        assert_conforms(&spec, "S", &json!({ "a": 1, "b": 2 }));
+    }
+
+    #[test]
+    #[should_panic(expected = "JSON Schema has seven types")]
+    fn contract_rejects_a_type_list_longer_than_json_has_types() {
+        let types: Value = json!(["string", "number", "integer", "boolean", "array", "object", "null", "string"]);
+        let spec: Value = json!({ "components": { "schemas": { "S": {
+            "properties": { "a": { "type": types } },
+            "required": ["a"]
+        } } } });
+        assert_conforms(&spec, "S", &json!({ "a": "x" }));
+    }
+
+    #[test]
+    fn serve_error_keeps_the_former_messages_and_its_cause() {
+        let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 3000));
+        let bind: ServeError = ServeError::Bind { addr, source: io::Error::other("in use") };
+        let text: ArrayString<MAX_MESSAGE_BYTES> = display(&bind);
+        assert_eq!(text.as_str(), "Failed to bind 127.0.0.1:3000: in use");
+        assert!(bind.source().is_some(), "the bind failure must stay reachable");
+
+        let stopped: ServeError = ServeError::Serve(io::Error::other("reset"));
+        let text: ArrayString<MAX_MESSAGE_BYTES> = display(&stopped);
+        assert_eq!(text.as_str(), "Server error: reset");
+        assert!(stopped.source().is_some(), "the serve failure must stay reachable");
+    }
+
     #[test]
     fn contract_json_type_distinguishes_integers_from_floats() {
-        let object: Map<String, Value> = Map::new();
         assert_eq!(json_type(&json!(1)), "integer");
         assert_eq!(json_type(&json!(1.5)), "number");
         assert_eq!(json_type(&json!(true)), "boolean");
         assert_eq!(json_type(&json!([])), "array");
-        assert_eq!(json_type(&Value::Object(object)), "object");
+        assert_eq!(json_type(&json!({})), "object");
     }
 
     fn sample() -> Result<WeatherSample, serde_json::Error> {
@@ -254,6 +337,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn weather_body_is_the_published_sample() -> Result<(), TestError> {
+        let expected: WeatherSample = sample()?;
+        let (_tx, rx) = watch::channel::<Option<WeatherSample>>(Some(sample()?));
+        let response = weather(State(rx)).await;
+        let body: Bytes = body::to_bytes(response.into_body(), MAX_TEST_BODY_BYTES).await?;
+        let served: WeatherSample = serde_json::from_slice(&body)?;
+        assert_eq!(served, expected, "the handler must serve the sample the refresher published");
+        return Ok(());
+    }
+
+    #[tokio::test]
     async fn serve_errors_when_address_in_use() -> Result<(), io::Error> {
         // Occupy a port, then ask the server to bind the same one so the bind
         // fails deterministically without depending on an external network.
@@ -265,8 +359,11 @@ mod tests {
             weather: WeatherConfig::default(),
         };
 
-        let result: Result<(), String> = serve(config).await;
-        assert!(result.is_err());
+        let result: Result<(), ServeError> = serve(config).await;
+        assert!(
+            matches!(&result, Err(ServeError::Bind { addr, .. }) if addr.port() == port),
+            "an occupied port must fail at bind and name the address, got {result:?}"
+        );
         return Ok(());
     }
 }

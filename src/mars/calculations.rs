@@ -5,15 +5,13 @@ use astro::consts::SPEED_OF_LIGHT;
 use astro::planet::{geocent_apprnt_ecl_coords, Planet};
 use astro::time::{Date, CalType, julian_day};
 use jiff::{SignedDuration, Timestamp, Zoned};
+use jiff::civil::Time;
 use jiff::tz::TimeZone;
 
 // IAU 2012 astronomical unit (exact): converts the AU radius vector to metres before the c divide.
 const AU_IN_METRES: f64 = 149_597_870_700.0;
 
 const SECONDS_PER_DAY: f64 = 86_400.0;
-const SECONDS_PER_HOUR: f64 = 3_600.0;
-const SECONDS_PER_MINUTE: f64 = 60.0;
-const NANOS_PER_SECOND: f64 = 1_000_000_000.0;
 
 // Earth-Mars distance, ~0.372 AU at perihelic opposition to ~2.683 AU at conjunction, widened for the astro approximation.
 pub const EARTH_MARS_DISTANCE_AU: RangeInclusive<f64> = 0.35..=2.70;
@@ -35,11 +33,8 @@ pub fn mars_comms_delay(start_time: Option<Timestamp>) -> f64 {
     let civil: Zoned = dt.to_zoned(TimeZone::UTC);
 
     // Fold time-of-day into Meeus' decimal day so sub-day resolution is kept, not snapped to midnight.
-    let fractional_seconds: f64 = f64::from(civil.hour()) * SECONDS_PER_HOUR
-        + f64::from(civil.minute()) * SECONDS_PER_MINUTE
-        + f64::from(civil.second())
-        + f64::from(civil.subsec_nanosecond()) / NANOS_PER_SECOND;
-    let decimal_day: f64 = f64::from(civil.day()) + fractional_seconds / SECONDS_PER_DAY;
+    let since_midnight: SignedDuration = civil.time().duration_since(Time::midnight());
+    let decimal_day: f64 = f64::from(civil.day()) + since_midnight.as_secs_f64() / SECONDS_PER_DAY;
 
     let gregorian: Date = Date{year: civil.year(), month: civil.month().cast_unsigned(),
         decimal_day, cal_type: CalType::Gregorian};
@@ -73,22 +68,18 @@ mod tests {
     const LIGHT_TIME_FOR_ONE_AU_SECS: f64 = 499.004_783_836;
     const LIGHT_TIME_ABS_TOL_SECS: f64 = 1e-6;
 
-    // Near opposition (2020-10-13) and near conjunction (2021-10-08): Mars distance differs ~6x.
-    const OPPOSITION_EPOCH_SECS: i64 = 1_602_547_200;
-    const CONJUNCTION_EPOCH_SECS: i64 = 1_633_651_200;
     // Distinct dates must yield distinct distances, proving the timestamp is used.
     const DISTINCT_DATE_MIN_RATIO: f64 = 1.5;
     // Return leg advances the start by the one-way travel time; Mars barely moves, so it stays within this rel tol (~6e-6) but differs.
     const RETURN_VS_ONE_WAY_REL_TOL: f64 = 1e-3;
-    // A half-day step within a single calendar day, used to prove the delay tracks time-of-day.
-    const HALF_DAY_SECS: i64 = 43_200;
 
+    // Near opposition and near conjunction: Mars distance differs ~6x.
     fn opposition() -> Result<Timestamp, jiff::Error> {
-        return Timestamp::from_second(OPPOSITION_EPOCH_SECS);
+        return "2020-10-13T00:00:00Z".parse();
     }
 
     fn conjunction() -> Result<Timestamp, jiff::Error> {
-        return Timestamp::from_second(CONJUNCTION_EPOCH_SECS);
+        return "2021-10-08T00:00:00Z".parse();
     }
 
     fn assert_in_physical_band(delay: f64) {
@@ -183,8 +174,8 @@ mod tests {
     #[test]
     fn delay_tracks_time_of_day_within_a_calendar_day() -> Result<(), jiff::Error> {
         // Midnight vs noon on the same day must differ; equal would mean time-of-day was truncated.
-        let midnight: Timestamp = Timestamp::from_second(OPPOSITION_EPOCH_SECS)?;
-        let noon: Timestamp = Timestamp::from_second(OPPOSITION_EPOCH_SECS + HALF_DAY_SECS)?;
+        let midnight: Timestamp = opposition()?;
+        let noon: Timestamp = midnight.checked_add(SignedDuration::from_hours(12))?;
 
         let at_midnight: f64 = mars_comms_delay(Some(midnight));
         let at_noon: f64 = mars_comms_delay(Some(noon));
@@ -224,8 +215,6 @@ mod tests {
         assert_in_physical_band(delay);
     }
 
-    // 0.5 s expressed in nanoseconds; the fractional part of a 208.5 s offset.
-    const HALF_SECOND_NANOS: i32 = 500_000_000;
     // Beyond i64::MAX seconds, so try_from_secs_f64 reports out-of-range.
     const OUT_OF_RANGE_SECONDS: f64 = 1e300;
 
@@ -233,8 +222,7 @@ mod tests {
     fn seconds_to_offset_maps_finite_positive() {
         let offset: SignedDuration = seconds_to_offset(208.5);
 
-        assert_eq!(offset.as_secs(), 208, "whole seconds preserved");
-        assert_eq!(offset.subsec_nanos(), HALF_SECOND_NANOS, "fractional seconds preserved");
+        assert_eq!(offset, SignedDuration::from_millis(208_500), "whole and fractional seconds preserved");
     }
 
     #[test]

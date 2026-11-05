@@ -1,4 +1,5 @@
 // Typed values of one weather reading: compass, sky, UV, pressure trend, temperature, and solar longitude.
+use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 use serde::{Deserialize, Serialize};
@@ -125,12 +126,26 @@ impl Display for Temperature {
 #[serde(try_from = "u16", into = "u16")]
 pub struct SolarLongitude(u16);
 
+// A solar longitude of a full orbit or more; serde shows its Display text as the decode error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SolarLongitudeOutOfRange {
+    pub degrees: u16,
+}
+
+impl Display for SolarLongitudeOutOfRange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        return write!(f, "solar longitude {} is not below {DEGREES_PER_ORBIT} degrees", self.degrees);
+    }
+}
+
+impl Error for SolarLongitudeOutOfRange {}
+
 impl TryFrom<u16> for SolarLongitude {
-    type Error = String;
+    type Error = SolarLongitudeOutOfRange;
 
     fn try_from(degrees: u16) -> Result<Self, Self::Error> {
         if degrees >= DEGREES_PER_ORBIT {
-            return Err(format!("solar longitude {degrees} is not below {DEGREES_PER_ORBIT} degrees"));
+            return Err(SolarLongitudeOutOfRange { degrees });
         }
         return Ok(SolarLongitude(degrees));
     }
@@ -144,15 +159,21 @@ impl From<SolarLongitude> for u16 {
 
 #[cfg(test)]
 mod tests {
+    use arrayvec::{ArrayString, ArrayVec};
     use serde_json::{Value, json};
 
     use super::AtmoOpacity;
     use super::PressureDirection;
     use super::SolarLongitude;
+    use super::SolarLongitudeOutOfRange;
     use super::Temperature;
     use super::UvIndex;
     use super::WindDirection;
     use crate::mars::openapi_contract::{self, assert_enum_matches};
+    use crate::mars::test_support::{MAX_MESSAGE_BYTES, display};
+
+    // An f64 prints as at most 24 JSON bytes ("-2.2250738585072014e-308").
+    const MAX_NUMBER_JSON_BYTES: usize = 32;
 
     // Each list's match stops compiling when a variant is added, forcing it into the list and the spec.
     fn all_wind_directions() -> [WindDirection; 9] {
@@ -203,7 +224,7 @@ mod tests {
 
     #[test]
     fn wind_direction_display_covers_all_variants() {
-        for (direction, expected) in [
+        [
             (WindDirection::N,  "N"),
             (WindDirection::NE, "NE"),
             (WindDirection::E,  "E"),
@@ -213,35 +234,41 @@ mod tests {
             (WindDirection::W,  "W"),
             (WindDirection::NW, "NW"),
             (WindDirection::Unknown, "Unknown"),
-        ] {
+        ]
+        .into_iter()
+        .for_each(|(direction, expected): (WindDirection, &str)| {
             assert_eq!(format!("{}", direction), expected);
-        }
+        });
     }
 
     #[test]
     fn atmo_opacity_display_covers_all_variants() {
-        for (opacity, expected) in [
+        [
             (AtmoOpacity::Sunny,  "Sunny"),
             (AtmoOpacity::Cloudy, "Cloudy"),
             (AtmoOpacity::Dusty,  "Dusty"),
             (AtmoOpacity::Unknown, "Unknown"),
-        ] {
+        ]
+        .into_iter()
+        .for_each(|(opacity, expected): (AtmoOpacity, &str)| {
             assert_eq!(format!("{}", opacity), expected);
-        }
+        });
     }
 
     #[test]
     fn uv_index_display_covers_all_variants() {
-        for (uv, expected) in [
+        [
             (UvIndex::Low,      "Low"),
             (UvIndex::Moderate, "Moderate"),
             (UvIndex::High,     "High"),
             (UvIndex::VeryHigh, "Very High"),
             (UvIndex::Extreme,  "Extreme"),
             (UvIndex::Unknown,  "Unknown"),
-        ] {
+        ]
+        .into_iter()
+        .for_each(|(uv, expected): (UvIndex, &str)| {
             assert_eq!(format!("{}", uv), expected);
-        }
+        });
     }
 
     #[test]
@@ -253,8 +280,9 @@ mod tests {
     #[test]
     fn temperature_serializes_transparently_as_number() -> Result<(), serde_json::Error> {
         let temp: Temperature = Temperature::from_celsius(-42.5);
-        let encoded: String = serde_json::to_string(&temp)?;
-        assert_eq!(encoded, "-42.5");
+        let mut encoded: ArrayVec<u8, MAX_NUMBER_JSON_BYTES> = ArrayVec::new();
+        serde_json::to_writer(&mut encoded, &temp)?;
+        assert_eq!(encoded.as_slice(), b"-42.5");
         return Ok(());
     }
 
@@ -275,5 +303,16 @@ mod tests {
         assert_eq!(serde_json::from_value::<SolarLongitude>(json!(359))?, SolarLongitude(359));
         assert!(serde_json::from_value::<SolarLongitude>(json!(360)).is_err(), "API input gets the same range check");
         return Ok(());
+    }
+
+    #[test]
+    fn solar_longitude_rejects_a_full_orbit_with_the_former_message() {
+        assert_eq!(SolarLongitude::try_from(359), Ok(SolarLongitude(359)), "359 is the last valid degree");
+        assert_eq!(SolarLongitude::try_from(360), Err(SolarLongitudeOutOfRange { degrees: 360 }));
+        let Err(error) = serde_json::from_value::<SolarLongitude>(json!(360)) else {
+            panic!("360 degrees must not decode");
+        };
+        let text: ArrayString<MAX_MESSAGE_BYTES> = display(&error);
+        assert!(text.starts_with("solar longitude 360 is not below 360 degrees"), "serde must keep the String-era text: {text}");
     }
 }

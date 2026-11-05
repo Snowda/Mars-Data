@@ -1,21 +1,25 @@
 use std::fmt::{self, Display, Formatter};
-use std::fs;
+use std::fs::File;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::num::NonZeroU64;
+use std::str;
 use std::time::Duration;
 
+use arrayvec::ArrayVec;
 use serde::Deserialize;
 use url::Url;
 
 const CONFIG_PATH: &str = "config.toml";
+// The shipped config.toml is under 1 KiB; the cap keeps the stack buffer small and refuses a runaway file.
+const MAX_CONFIG_BYTES: usize = 16 * 1024;
 // Loopback by default so the API is not exposed on all interfaces without the
 // operator explicitly opting in (set server.host = "0.0.0.0" for public serving).
 const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const DEFAULT_PORT: u16 = 3000;
-const DEFAULT_REFRESH_INTERVAL_SECS: Seconds = Seconds::new(3600).expect("non-zero literal");
-const DEFAULT_REQUEST_TIMEOUT_SECS: Seconds = Seconds::new(5).expect("non-zero literal");
-const DEFAULT_CONNECT_TIMEOUT_SECS: Seconds = Seconds::new(3).expect("non-zero literal");
+const DEFAULT_REFRESH_INTERVAL: Seconds = Seconds::new(3600).expect("non-zero literal");
+const DEFAULT_REQUEST_TIMEOUT: Seconds = Seconds::new(5).expect("non-zero literal");
+const DEFAULT_CONNECT_TIMEOUT: Seconds = Seconds::new(3).expect("non-zero literal");
 const DEFAULT_WEATHER_URL: &str = "https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json";
 
 // Whole seconds, never zero: a zero refresh hammers the upstream and a zero timeout fails every fetch.
@@ -41,6 +45,7 @@ impl Seconds {
 #[derive(Debug)]
 pub enum ConfigError {
     Io(io::Error),
+    TooLarge { cap_bytes: usize },
     Parse(toml::de::Error),
 }
 
@@ -48,6 +53,7 @@ impl Display for ConfigError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         return match self {
             ConfigError::Io(e) => write!(f, "failed to read config file: {}", e),
+            ConfigError::TooLarge { cap_bytes } => write!(f, "config file is larger than {} bytes", cap_bytes),
             ConfigError::Parse(e) => write!(f, "failed to parse config file: {}", e),
         };
     }
@@ -101,7 +107,7 @@ impl Default for ServerConfig {
         return ServerConfig {
             host: DEFAULT_HOST,
             port: DEFAULT_PORT,
-            refresh_interval_secs: DEFAULT_REFRESH_INTERVAL_SECS,
+            refresh_interval_secs: DEFAULT_REFRESH_INTERVAL,
         };
     }
 }
@@ -110,8 +116,8 @@ impl Default for WeatherConfig {
     fn default() -> Self {
         return WeatherConfig {
             url: None,
-            request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
-            connect_timeout_secs: DEFAULT_CONNECT_TIMEOUT_SECS,
+            request_timeout_secs: DEFAULT_REQUEST_TIMEOUT,
+            connect_timeout_secs: DEFAULT_CONNECT_TIMEOUT,
         };
     }
 }
@@ -130,13 +136,24 @@ impl Config {
     // Loads config from the given path. A missing file is not an error: the
     // binary should run out of the box, so we fall back to the built-in defaults.
     fn from_path(path: &str) -> Result<Self, ConfigError> {
-        let contents: String = match fs::read_to_string(path) {
-            Ok(text) => text,
+        let mut file: File = match File::open(path) {
+            Ok(opened) => opened,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
             Err(e) => return Err(ConfigError::Io(e)),
         };
+        // ArrayVec's io::Write takes bytes until full, then io::copy fails with WriteZero.
+        let mut contents: ArrayVec<u8, MAX_CONFIG_BYTES> = ArrayVec::new();
+        match io::copy(&mut file, &mut contents) {
+            Ok(_) => {},
+            Err(e) if e.kind() == io::ErrorKind::WriteZero => {
+                return Err(ConfigError::TooLarge { cap_bytes: MAX_CONFIG_BYTES });
+            },
+            Err(e) => return Err(ConfigError::Io(e)),
+        }
+        // Same error kind read_to_string gave for a non-UTF-8 file.
+        let text: &str = str::from_utf8(&contents).map_err(|e| ConfigError::Io(io::Error::new(io::ErrorKind::InvalidData, e)))?;
 
-        return Self::from_toml_str(&contents);
+        return Self::from_toml_str(text);
     }
 
     fn from_toml_str(contents: &str) -> Result<Self, ConfigError> {
@@ -146,19 +163,29 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+    use std::fs;
     use std::io;
     use std::net::SocketAddr;
+    use std::path::PathBuf;
+    use std::process;
     use std::time::Duration;
 
+    use arrayvec::ArrayString;
     use url::Url;
 
     use super::Config;
     use super::ConfigError;
-    use super::DEFAULT_CONNECT_TIMEOUT_SECS;
-    use super::DEFAULT_REFRESH_INTERVAL_SECS;
-    use super::DEFAULT_REQUEST_TIMEOUT_SECS;
+    use super::DEFAULT_CONNECT_TIMEOUT;
+    use super::DEFAULT_REFRESH_INTERVAL;
+    use super::DEFAULT_REQUEST_TIMEOUT;
     use super::DEFAULT_WEATHER_URL;
+    use super::MAX_CONFIG_BYTES;
     use super::Seconds;
+    use crate::mars::test_support::{MAX_MESSAGE_BYTES, display};
+
+    // 0xFF never occurs in UTF-8.
+    const NOT_UTF8: &[u8] = &[0xFF, 0xFE];
 
     #[test]
     fn parses_all_fields() -> Result<(), ConfigError> {
@@ -191,7 +218,7 @@ mod tests {
     fn weather_url_override_replaces_the_default() -> Result<(), ConfigError> {
         let config: Config = Config::from_toml_str("[weather]\nurl = \"http://127.0.0.1:8080/feed\"")?;
         assert_eq!(config.weather.url(), "http://127.0.0.1:8080/feed");
-        assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT_SECS, "other fields keep defaults");
+        assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT, "other fields keep defaults");
         return Ok(());
     }
 
@@ -216,9 +243,9 @@ mod tests {
     #[test]
     fn empty_config_uses_all_defaults() -> Result<(), ConfigError> {
         let config: Config = Config::from_toml_str("")?;
-        assert_eq!(config.server.refresh_interval_secs, DEFAULT_REFRESH_INTERVAL_SECS);
-        assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT_SECS);
-        assert_eq!(config.weather.connect_timeout_secs, DEFAULT_CONNECT_TIMEOUT_SECS);
+        assert_eq!(config.server.refresh_interval_secs, DEFAULT_REFRESH_INTERVAL);
+        assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT);
+        assert_eq!(config.weather.connect_timeout_secs, DEFAULT_CONNECT_TIMEOUT);
         return Ok(());
     }
 
@@ -227,8 +254,8 @@ mod tests {
         let config: Config = Config::from_toml_str("[server]\nport = 5000")?;
         let expected: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 5000));
         assert_eq!(config.server.bind_addr(), expected);
-        assert_eq!(config.server.refresh_interval_secs, DEFAULT_REFRESH_INTERVAL_SECS);
-        assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT_SECS);
+        assert_eq!(config.server.refresh_interval_secs, DEFAULT_REFRESH_INTERVAL);
+        assert_eq!(config.weather.request_timeout_secs, DEFAULT_REQUEST_TIMEOUT);
         return Ok(());
     }
 
@@ -272,6 +299,68 @@ mod tests {
         // Reading a directory as a file fails with a non-NotFound IO error.
         let result: Result<Config, ConfigError> = Config::from_path(".");
         assert!(matches!(result, Err(ConfigError::Io(_))));
+    }
+
+    // A config file under the OS temp dir, unique per test and removed on drop.
+    struct TempConfig {
+        path: PathBuf,
+    }
+
+    impl TempConfig {
+        fn new(name: &str, bytes: &[u8]) -> io::Result<Self> {
+            let path: PathBuf = env::temp_dir().join(format!("mars-data-config-{}-{name}.toml", process::id()));
+            fs::write(&path, bytes)?;
+            return Ok(Self { path });
+        }
+
+        fn load(&self) -> Result<Config, ConfigError> {
+            let Some(path) = self.path.to_str() else {
+                panic!("the temp dir path must be UTF-8 for this test: {}", self.path.display());
+            };
+            return Config::from_path(path);
+        }
+    }
+
+    impl Drop for TempConfig {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+
+    // A TOML comment of exactly `N` bytes: valid config that sets nothing.
+    fn comment_of<const N: usize>() -> [u8; N] {
+        let mut bytes: [u8; N] = [b'x'; N];
+        bytes[0] = b'#';
+        return bytes;
+    }
+
+    #[test]
+    fn a_file_of_exactly_the_cap_loads_and_one_byte_more_is_refused() -> io::Result<()> {
+        let at_cap: TempConfig = TempConfig::new("at-cap", &comment_of::<MAX_CONFIG_BYTES>())?;
+        assert!(at_cap.load().is_ok(), "a file of exactly MAX_CONFIG_BYTES must still load");
+        let over: TempConfig = TempConfig::new("over-cap", &comment_of::<{ MAX_CONFIG_BYTES + 1 }>())?;
+        assert!(
+            matches!(over.load(), Err(ConfigError::TooLarge { cap_bytes: MAX_CONFIG_BYTES })),
+            "one byte over the cap must be refused, not cut"
+        );
+        return Ok(());
+    }
+
+    #[test]
+    fn a_non_utf8_file_is_invalid_data_as_with_read_to_string() -> io::Result<()> {
+        let file: TempConfig = TempConfig::new("non-utf8", NOT_UTF8)?;
+        let result: Result<Config, ConfigError> = file.load();
+        assert!(
+            matches!(&result, Err(ConfigError::Io(e)) if e.kind() == io::ErrorKind::InvalidData),
+            "got {result:?}"
+        );
+        return Ok(());
+    }
+
+    #[test]
+    fn too_large_displays_the_cap() {
+        let text: ArrayString<MAX_MESSAGE_BYTES> = display(&ConfigError::TooLarge { cap_bytes: MAX_CONFIG_BYTES });
+        assert_eq!(text.as_str(), "config file is larger than 16384 bytes");
     }
 
     #[test]

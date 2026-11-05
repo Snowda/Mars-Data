@@ -3,7 +3,7 @@
 name = "mars-data"
 version = "0.1.4"
 authors = ["Conor Forde"]
-rust-version = "1.96.0"
+rust-version = "1.99.1"
 edition = '2024'
 license = "MIT"
 default-run = "marsdata"
@@ -15,6 +15,12 @@ keywords = ["mars", "planet", "data"]
 [[bin]]
 name = "marsdata"
 path = "src/main.rs"
+
+[workspace]
+members = ["fuzz"]
+default-members = [".", "fuzz"]
+# infra/ is a standalone Pulumi program with its own Cargo.lock.
+exclude = ["infra"]
 
 [features]
 default = ["std"]
@@ -28,26 +34,31 @@ astro = "2.0.0"
 
 # JSON
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+# float_roundtrip: the default float parser can land 1 ULP off, so a served f64 would not decode to itself.
+serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
 
 # Config
-toml = "1.1"
+toml = "1.1.8+spec-1.1.0"
 
 # Networking
-# rustls-no-provider: we install the aws-lc-rs CryptoProvider ourselves (ring is unmaintained),
-# matching the provider reqwest 0.13's `rustls` feature would pull. aws-lc-rs needs a C/cmake
-# toolchain (NASM on Windows). See the CryptoProvider install in weather.rs.
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "gzip", "rustls-no-provider"] }
-rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
+# hyper client over rustls with the aws-lc-rs provider passed explicitly (ring is unmaintained).
+# aws-lc-rs needs a C/cmake toolchain (NASM on Windows). See build_client in weather/fetch.rs.
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["client", "http1"] }
+hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "tls12", "webpki-roots"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
+# serde lets config.toml's weather URL be validated at load.
+url = { version = "2.5.8", features = ["serde"] }
 
 # Web framework
 axum = "0.8"
 
 # Threading
-tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 
 # Time library
-jiff = { version = "0.2", features = ["serde"] }
+jiff = { version = "0.2.38", features = ["serde"] }
 
 # Stack-allocated strings and vecs with known bounds
 arrayvec = { version = "0.7", features = ["serde"] }
@@ -56,16 +67,30 @@ arrayvec = { version = "0.7", features = ["serde"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
+[dev-dependencies]
+# io-util: the fetch tests write raw HTTP replies to a socket.
+tokio = { version = "1.54.1", features = ["io-util"] }
+
 [profile.dev]
 # line tables keep backtraces while avoiding the cost of generating + linking full debuginfo
 debug = "line-tables-only"
 opt-level = 0
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+# Keep integer overflow a panic in release instead of a silent wrap.
+overflow-checks = true
 
 [lints.rust]
 # No unsafe anywhere in the tree (forbid blocks even a local #[allow] opt-in).
 unsafe_code = "forbid"
 
 [lints.clippy]
+ref_option = "deny"
+fn_params_excessive_bools = "deny"
+missing_assert_message = "deny"
+string_add = "deny"
 # Reconcile clippy defaults with the project's explicit-return convention.
 needless_return = "allow"
 
