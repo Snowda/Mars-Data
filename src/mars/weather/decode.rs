@@ -1,4 +1,4 @@
-// Streams a feed body to its first sol without a JSON tree; strings are read in place.
+// Streams a feed body to its first sol without a JSON tree. The decoder reads strings in place.
 // Skipped values are still parsed in full, so a body fails exactly when it fails as a serde_json::Value.
 use std::fmt::{self, Formatter};
 
@@ -17,7 +17,7 @@ const DATE_FORMAT: &str = "%Y-%m-%d";
 const TIME_FORMAT: &str = "%H:%M";
 const SOL_FIELD_COUNT: usize = 17;
 
-// What a decoder makes of each JSON shape; any shape it does not override is parsed, then gives `absent`.
+// What a decoder makes of each JSON shape. A decoder parses any shape it does not override, then gives `absent`.
 pub trait Shape<'de>: Sized {
     type Output;
 
@@ -119,7 +119,7 @@ fn drain_map<'de, A: MapAccess<'de>>(mut map: A) -> Result<(), A::Error> {
     return Ok(());
 }
 
-// A value from one JSON form or another; the "--" no-reading mark and every other form give None.
+// A value from one JSON form or another. The "--" no-data mark and every other form give None.
 pub struct Reading<T> {
     from_text: fn(&str) -> Option<T>,
     from_unsigned: fn(u64) -> Option<T>,
@@ -158,7 +158,7 @@ const fn not_a_label<N: Copy, T>(_n: N) -> Option<T> {
     return None;
 }
 
-// A measurement as a JSON number or numeric string; Number::as_f64 widens integers as Value did.
+// A measurement as a JSON number or numeric string. Number::as_f64 widens integers as Value did.
 const fn measurement() -> Lenient<Reading<f64>> {
     return Lenient(Reading {
         from_text: |text: &str| text.parse::<f64>().ok(),
@@ -168,7 +168,7 @@ const fn measurement() -> Lenient<Reading<f64>> {
     });
 }
 
-// A whole count; a fraction in either form is refused, not truncated.
+// A whole count. The decoder refuses a fraction in either form and does not truncate it.
 const fn count() -> Lenient<Reading<u32>> {
     return Lenient(Reading {
         from_text: |text: &str| text.parse::<u32>().ok(),
@@ -311,7 +311,7 @@ fn read_label<'de, A: MapAccess<'de>>(sample: &mut WeatherSample, field: LabelFi
     };
 }
 
-// One sol report; a report that is not an object reads as all-missing, as Value::get gave.
+// One sol report. A report that is not an object reads as all-absent, as Value::get gave.
 pub struct Sol;
 
 impl<'de> Shape<'de> for Sol {
@@ -352,7 +352,7 @@ impl<'de> Shape<'de> for Sol {
     }
 }
 
-// The feed lists the latest sol first; the rest are parsed only to check the JSON.
+// The feed lists the latest sol first. The decoder parses the rest only to check the JSON.
 pub struct Soles;
 
 impl<'de> Shape<'de> for Soles {
@@ -440,7 +440,7 @@ mod tests {
     const XORSHIFT_LEFT: u32 = 13;
     const XORSHIFT_RIGHT: u32 = 7;
     const XORSHIFT_LEFT_AGAIN: u32 = 17;
-    // serde_json stops at 128 levels; this is past it.
+    // serde_json stops at 128 levels. This depth is past it.
     const PAST_RECURSION_LIMIT: usize = 200;
     // JSON punctuation, digits, escape starts, a non-UTF-8 byte and the letters of "soles".
     const ALPHABET: &[u8] = b"{}[]\",:-.0123456789eE+\\u\xff solte_";
@@ -638,7 +638,7 @@ mod tests {
         assert!(is_every_outcome, "mutants must reach every outcome, or a path goes uncompared: {tally:?}");
     }
 
-    // JSON keys are always strings; serde's in-memory deserializers reach the non-string key paths.
+    // JSON keys are always strings. The in-memory deserializers of serde reach the non-string key paths.
     #[test]
     fn non_string_keys_read_as_unknown_fields() -> Result<(), ValueError> {
         let sol_map: MapDeserializer<'_, IntoIter<(u64, u64), 1>, ValueError> = MapDeserializer::new([(1, 5)].into_iter());

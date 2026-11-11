@@ -7,7 +7,7 @@ use arrayvec::ArrayString;
 
 use crate::mars::weather::FetchError;
 
-// An error's text is a line or two; tests that assert on a message use this capacity.
+// An error's text is a line or two. Tests that assert on a message use this capacity.
 pub const MAX_MESSAGE_BYTES: usize = 512;
 
 // Panics when the text is longer than N, so a too-small buffer fails the test and does not cut the text.

@@ -17,16 +17,16 @@ use tracing::{error, info, warn};
 use crate::mars::config::{Config, WeatherConfig};
 use crate::mars::weather::{WeatherSample, load_weather_data};
 
-// Single writer (the refresher task) publishes the latest sample; every handler
-// holds a cheap Clone receiver and reads the current value without locking.
+// One writer (the refresher task) publishes the latest sample. Each handler
+// holds a cheap Clone receiver and reads the current value with no lock.
 type WeatherReceiver = watch::Receiver<Option<WeatherSample>>;
 
-// Routes and the 503 body are documented in openapi.json; tests below keep the two in sync.
+// openapi.json documents the routes and the 503 body. The tests below keep the two in sync.
 const HEALTH_PATH: &str = "/health";
 const WEATHER_PATH: &str = "/weather";
 const NOT_READY_MESSAGE: &str = "Weather data not yet available";
 
-// Why the server stopped; the refresher task's failures are logged, never returned.
+// Why the server stopped. The refresher task logs its failures and never returns them.
 #[derive(Debug)]
 pub enum ServeError {
     Bind { addr: SocketAddr, source: io::Error },
@@ -83,7 +83,7 @@ pub async fn serve(config: Config) -> Result<(), ServeError> {
     return axum::serve(listener, app).await.map_err(ServeError::Serve);
 }
 
-// Refreshes the published sample on a fixed interval; the first fetch runs
+// Refreshes the published sample on a fixed interval. The first fetch runs
 // immediately so the API has data shortly after startup.
 async fn refresh_loop(tx: watch::Sender<Option<WeatherSample>>, config: WeatherConfig, interval: Duration) {
     loop {
@@ -349,8 +349,8 @@ mod tests {
 
     #[tokio::test]
     async fn serve_errors_when_address_in_use() -> Result<(), io::Error> {
-        // Occupy a port, then ask the server to bind the same one so the bind
-        // fails deterministically without depending on an external network.
+        // The test holds a port and asks the server to bind the same one.
+        // So the bind always fails, and no external network is necessary.
         let occupied: TcpListener = TcpListener::bind("127.0.0.1:0").await?;
         let port: u16 = occupied.local_addr()?.port();
 

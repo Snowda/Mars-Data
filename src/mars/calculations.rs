@@ -44,7 +44,8 @@ pub fn mars_comms_delay(start_time: Option<Timestamp>) -> f64 {
     return light_time_secs(rad_vec_mars);
 }
 
-// Float constructor avoids a lossy float->int cast; non-finite/out-of-range input falls back to zero. Extracted to be directly testable.
+// The float constructor avoids a lossy float->int cast. Non-finite or out-of-range input falls back to zero.
+// Extracted so tests can call it directly.
 fn seconds_to_offset(seconds: f64) -> SignedDuration {
     return SignedDuration::try_from_secs_f64(seconds).unwrap_or(SignedDuration::ZERO);
 }
@@ -68,9 +69,10 @@ mod tests {
     const LIGHT_TIME_FOR_ONE_AU_SECS: f64 = 499.004_783_836;
     const LIGHT_TIME_ABS_TOL_SECS: f64 = 1e-6;
 
-    // Distinct dates must yield distinct distances, proving the timestamp is used.
+    // Distinct dates must yield distinct distances. This proves the delay uses the timestamp.
     const DISTINCT_DATE_MIN_RATIO: f64 = 1.5;
-    // Return leg advances the start by the one-way travel time; Mars barely moves, so it stays within this rel tol (~6e-6) but differs.
+    // The return leg advances the start by the one-way travel time. Mars barely moves in that time.
+    // So the two delays differ, but by less than this relative tolerance (~6e-6).
     const RETURN_VS_ONE_WAY_REL_TOL: f64 = 1e-3;
 
     // Near opposition and near conjunction: Mars distance differs ~6x.
@@ -125,7 +127,7 @@ mod tests {
 
     #[test]
     fn delay_varies_with_date() -> Result<(), jiff::Error> {
-        // Opposition is nearer, conjunction farther; equal values would mean the timestamp is ignored.
+        // Opposition is nearer and conjunction farther. Equal values would mean the delay ignores the timestamp.
         let near: f64 = mars_comms_delay(Some(opposition()?));
         let far: f64 = mars_comms_delay(Some(conjunction()?));
 
@@ -140,7 +142,7 @@ mod tests {
 
     #[test]
     fn delay_none_defaults_to_now_and_stays_in_band() {
-        // Covers the `unwrap_or_else(Timestamp::now)` branch; "now" is real geometry, still in band.
+        // Covers the `unwrap_or_else(Timestamp::now)` branch. "now" is real geometry, so the delay stays in band.
         let delay: f64 = mars_comms_delay(None);
 
         assert!(delay > 0.0, "delay must be positive, got {delay:e}");
@@ -158,7 +160,8 @@ mod tests {
 
     #[test]
     fn return_delay_is_close_to_but_distinct_from_one_way() -> Result<(), jiff::Error> {
-        // Return leg advances start by the one-way time before recomputing: close but not identical; equality would mean the offset was discarded.
+        // The return leg advances the start by the one-way time, then computes the delay again.
+        // The two are close but not equal. Equal values would mean the code drops the offset.
         let one_way: f64 = mars_comms_delay(Some(opposition()?));
         let round: f64 = mars_comms_return_delay(Some(opposition()?));
 
@@ -173,7 +176,7 @@ mod tests {
 
     #[test]
     fn delay_tracks_time_of_day_within_a_calendar_day() -> Result<(), jiff::Error> {
-        // Midnight vs noon on the same day must differ; equal would mean time-of-day was truncated.
+        // Midnight and noon on the same day must differ. Equal values would mean the code drops the time of day.
         let midnight: Timestamp = opposition()?;
         let noon: Timestamp = midnight.checked_add(SignedDuration::from_hours(12))?;
 
@@ -227,7 +230,7 @@ mod tests {
 
     #[test]
     fn seconds_to_offset_maps_finite_negative() {
-        // Negative finite values are in range, so they convert rather than hitting the fallback.
+        // Negative finite values are in range, so they convert and do not reach the fallback.
         let offset: SignedDuration = seconds_to_offset(-3.0);
 
         assert_eq!(offset.as_secs(), -3, "negative finite input converts, not falls back");

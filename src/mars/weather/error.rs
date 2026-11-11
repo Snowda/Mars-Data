@@ -96,7 +96,7 @@ mod tests {
         });
     }
 
-    // The String messages these variants replaced; logs must read the same.
+    // The String messages these variants replaced. Logs must read the same.
     #[test]
     fn display_keeps_the_former_string_messages() {
         let cases: [(FetchError, &str); 6] = [

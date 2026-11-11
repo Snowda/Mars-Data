@@ -11,10 +11,10 @@ use serde::Deserialize;
 use url::Url;
 
 const CONFIG_PATH: &str = "config.toml";
-// The shipped config.toml is under 1 KiB; the cap keeps the stack buffer small and refuses a runaway file.
+// The shipped config.toml is under 1 KiB. The cap keeps the stack buffer small and refuses a runaway file.
 const MAX_CONFIG_BYTES: usize = 16 * 1024;
-// Loopback by default so the API is not exposed on all interfaces without the
-// operator explicitly opting in (set server.host = "0.0.0.0" for public serving).
+// Loopback by default, so the API is on all interfaces only when the operator
+// asks for it. Set server.host = "0.0.0.0" to serve the public network.
 const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const DEFAULT_PORT: u16 = 3000;
 const DEFAULT_REFRESH_INTERVAL: Seconds = Seconds::new(3600).expect("non-zero literal");
@@ -133,8 +133,8 @@ impl Config {
         return Self::from_path(CONFIG_PATH);
     }
 
-    // Loads config from the given path. A missing file is not an error: the
-    // binary should run out of the box, so we fall back to the built-in defaults.
+    // Loads config from the given path. An absent file is not an error: the
+    // binary must run out of the box, so it falls back to the built-in defaults.
     fn from_path(path: &str) -> Result<Self, ConfigError> {
         let mut file: File = match File::open(path) {
             Ok(opened) => opened,
@@ -231,8 +231,8 @@ mod tests {
 
     #[test]
     fn loopback_default_is_not_unspecified_but_explicit_zero_host_is() -> Result<(), ConfigError> {
-        // serve() warns when the bind address is unspecified (all interfaces);
-        // this locks both directions of that guard's condition.
+        // serve() warns when the bind address is unspecified (all interfaces).
+        // This test locks both directions of that guard's condition.
         assert!(!Config::default().server.bind_addr().ip().is_unspecified());
         let exposed: Config = Config::from_toml_str("[server]\nhost = \"0.0.0.0\"")?;
         assert!(exposed.server.bind_addr().ip().is_unspecified());
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn rejects_zero_refresh_interval_and_timeouts() {
-        // Zero refresh hammers the upstream; a zero timeout fails every fetch.
+        // A zero refresh hammers the upstream. A zero timeout fails every fetch.
         ["[server]\nrefresh_interval_secs = 0", "[weather]\nrequest_timeout_secs = 0", "[weather]\nconnect_timeout_secs = 0"]
             .iter()
             .for_each(|toml: &&str| assert!(Config::from_toml_str(toml).is_err(), "zero must be rejected at load: {toml}"));
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn new_loads_repository_config_file() {
         // The repo ships a config.toml at the crate root, which is the cwd during
-        // `cargo test`, so this exercises the real file-reading path.
+        // `cargo test`, so this test exercises the real file-read path.
         let result: Result<Config, ConfigError> = Config::new();
         assert!(result.is_ok());
     }
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn unreadable_path_yields_io_error() {
-        // Reading a directory as a file fails with a non-NotFound IO error.
+        // A read of a directory as a file fails with a non-NotFound IO error.
         let result: Result<Config, ConfigError> = Config::from_path(".");
         assert!(matches!(result, Err(ConfigError::Io(_))));
     }

@@ -16,8 +16,8 @@ use super::WeatherSample;
 use super::parse_weather_body;
 use crate::mars::config::WeatherConfig;
 
-// The MSL feed is a few hundred KiB; cap the accepted body well above that so a
-// hostile or compromised upstream cannot exhaust memory with an unbounded body.
+// The MSL feed is a few hundred KiB. The body cap is well above that, so a
+// hostile upstream cannot exhaust memory with an unbounded body.
 const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 type HttpsClient = Client<HttpsConnector<HttpConnector>, Empty<Bytes>>;
@@ -37,7 +37,7 @@ pub async fn load_weather_data(config: &WeatherConfig) -> Result<WeatherSample, 
 
 fn build_client(connect_timeout: Duration) -> Result<HttpsClient, FetchError> {
     let mut http: HttpConnector = HttpConnector::new();
-    // HttpsConnector routes https itself; the inner connector must accept every scheme.
+    // HttpsConnector routes https itself. The inner connector must accept every scheme.
     http.enforce_http(false);
     http.set_connect_timeout(Some(connect_timeout));
     let https: HttpsConnector<HttpConnector> = HttpsConnectorBuilder::new()
@@ -58,7 +58,7 @@ async fn fetch_body(client: &HttpsClient, uri: Uri) -> Result<Bytes, FetchError>
     return read_capped_body(response.into_body()).await;
 }
 
-// Keeps hyper's frames as they arrive and stops at the first one past the cap; a body in one frame is not copied.
+// Keeps hyper's frames as they arrive and stops at the first one past the cap. It does not copy a body that comes in one frame.
 async fn read_capped_body(incoming: Incoming) -> Result<Bytes, FetchError> {
     return match Limited::new(incoming, MAX_RESPONSE_BODY_BYTES).collect().await {
         Ok(body) => Ok(body.to_bytes()),
@@ -138,7 +138,7 @@ mod tests {
         return Ok(addr);
     }
 
-    // The URL text is built on the stack; only the parsed Url owns heap memory.
+    // The URL text is on the stack. Only the parsed Url owns heap memory.
     fn config_for(addr: SocketAddr, path: &str) -> Result<WeatherConfig, url::ParseError> {
         let text: ArrayString<MAX_URL_BYTES> = display(&format_args!("http://{addr}{path}"));
         let url: Url = Url::parse(&text)?;

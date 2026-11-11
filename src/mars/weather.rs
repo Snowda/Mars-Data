@@ -17,9 +17,9 @@ pub use error::FetchError;
 pub use fetch::load_weather_data;
 pub use values::{AtmoOpacity, PressureDirection, SolarLongitude, Temperature, UvIndex, WindDirection};
 
-// The feed writes this where it has no reading.
+// The feed writes this where it has no data.
 const NO_READING: &str = "--";
-// Byte capacity of the season label; longer labels are cut on a char boundary.
+// Byte capacity of the season label. Longer labels are cut on a char boundary.
 const SEASON_CAP: usize = 32;
 /// Upper bound on one sample's JSON, so a serialized sample fits a stack buffer.
 ///
@@ -49,9 +49,9 @@ pub struct WeatherSample {
     sunset: Option<Time>,
 }
 
-// Fill char-by-char and stop when the next char would overflow.
-// A byte slice at a fixed offset can split a multi-byte UTF-8
-// char and panic; try_push only ever appends whole chars.
+// Fills char by char up to the last char that fits.
+// A byte slice at a fixed offset can split a multi-byte UTF-8 char and panic.
+// try_push only appends whole chars.
 fn truncate_season(s: &str) -> ArrayString<SEASON_CAP> {
     let filled: ControlFlow<ArrayString<SEASON_CAP>, ArrayString<SEASON_CAP>> =
         s.chars().try_fold(ArrayString::new(), |mut buffer: ArrayString<SEASON_CAP>, c: char| {
@@ -120,7 +120,7 @@ mod tests {
         return SolarLongitude::try_from(degrees).ok();
     }
 
-    // Every field populated; report.rs's tests start from it too.
+    // Every field has a value. report.rs's tests start from it too.
     pub fn full_sample() -> WeatherSample {
         return WeatherSample {
             terrestrial_date: Date::new(2025, 9, 10).ok(),
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn parse_unavailable_sentinel_yields_none() {
-        // The feed uses "--" to mark missing measurements.
+        // The feed uses "--" to mark a measurement it does not have.
         let report = json!({ "abs_humidity": "--", "wind_speed": "--" });
         let sample = decode(&report);
         assert!(sample.abs_humidity.is_none());
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn parse_sentinel_enum_fields_yield_none() {
-        // "--" marks a missing reading, the same as for the numeric fields; Unknown is for values we do not recognise.
+        // "--" marks an absent value, the same as for the numeric fields. Unknown is for values we do not recognise.
         let report: Value = json!({
             "wind_direction": "--", "atmo_opacity": "--", "local_uv_irradiance_index": "--", "pressure_string": "--"
         });
@@ -434,8 +434,8 @@ mod tests {
     #[test]
     fn parse_multibyte_season_truncates_on_char_boundary() {
         // 30 ASCII bytes + one 4-byte char = 34 bytes. The old fixed-offset byte
-        // slice panicked here ("byte index 32 is not a char boundary"); the emoji
-        // straddles byte 32 so it must be dropped whole, leaving the 30 ASCII bytes.
+        // slice panicked here ("byte index 32 is not a char boundary"). The emoji
+        // straddles byte 32, so the parser drops it whole and keeps the 30 ASCII bytes.
         let report = json!({ "season": SEASON_STRADDLING_BYTE_32 });
         let Some(parsed) = decode(&report).season else {
             panic!("season should be populated");

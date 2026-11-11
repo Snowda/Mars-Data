@@ -1,4 +1,4 @@
-// Typed values of one weather reading: compass, sky, UV, pressure trend, temperature, and solar longitude.
+// Typed values of one weather sample: compass, sky, UV, pressure trend, temperature, and solar longitude.
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 // Solar longitude wraps to 0 after a full orbit.
 const DEGREES_PER_ORBIT: u16 = 360;
 
-// Feed labels decode through these serde names (plus aliases); `Unknown` catches labels we do not recognise.
+// Feed labels decode through these serde names (plus aliases). `Unknown` catches labels we do not recognise.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum WindDirection {
     N,
@@ -63,7 +63,7 @@ pub enum UvIndex {
     Low,
     Moderate,
     High,
-    // The API name stays VeryHigh; the alias accepts the feed's spelling.
+    // The API name stays VeryHigh. The alias accepts the name as the feed writes it.
     #[serde(alias = "Very_High")]
     VeryHigh,
     Extreme,
@@ -86,7 +86,7 @@ impl Display for UvIndex {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PressureDirection {
-    // The feed reports the trend as Higher or Lower; any other label is no trend at all.
+    // The feed reports the trend as Higher or Lower. Any other label is no trend at all.
     #[serde(alias = "Higher")]
     Rising,
     #[serde(alias = "Lower")]
@@ -121,12 +121,12 @@ impl Display for Temperature {
     }
 }
 
-// Mars' orbital position in whole degrees, 0 to 359; the feed calls it `ls`.
+// Mars' orbital position in whole degrees, 0 to 359. The feed calls it `ls`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u16", into = "u16")]
 pub struct SolarLongitude(u16);
 
-// A solar longitude of a full orbit or more; serde shows its Display text as the decode error.
+// A solar longitude of a full orbit or more. Serde shows its Display text as the decode error.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SolarLongitudeOutOfRange {
     pub degrees: u16,
@@ -175,7 +175,7 @@ mod tests {
     // An f64 prints as at most 24 JSON bytes ("-2.2250738585072014e-308").
     const MAX_NUMBER_JSON_BYTES: usize = 32;
 
-    // Each list's match stops compiling when a variant is added, forcing it into the list and the spec.
+    // A new variant breaks the build of each list's match. That puts the variant into the list and the spec.
     fn all_wind_directions() -> [WindDirection; 9] {
         let all: [WindDirection; 9] = [
             WindDirection::N, WindDirection::NE, WindDirection::E, WindDirection::SE, WindDirection::S,
