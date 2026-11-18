@@ -5,7 +5,7 @@
 
 # ---- Build stage ----
 # Pin to the toolchain declared in rust-toolchain.toml. Fully qualified: Podman has no default registry.
-FROM docker.io/library/rust:1.99.1-slim-bookworm AS builder
+FROM docker.io/library/rust:1.100.0-slim-bookworm AS builder
 
 WORKDIR /build
 
