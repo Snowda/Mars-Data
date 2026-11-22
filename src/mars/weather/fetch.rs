@@ -131,8 +131,8 @@ mod tests {
             };
             // hyper refuses a reply that arrives before its request is written.
             let mut request: [u8; RAW_REQUEST_BUFFER] = [0; RAW_REQUEST_BUFFER];
-            let _read = stream.read(&mut request).await;
-            let _sent = stream.write_all(reply).await;
+            let _read: Result<usize, io::Error> = stream.read(&mut request).await;
+            let _sent: Result<(), io::Error> = stream.write_all(reply).await;
             tokio::time::sleep(hold).await;
         });
         return Ok(addr);

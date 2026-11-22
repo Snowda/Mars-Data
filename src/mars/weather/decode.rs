@@ -12,7 +12,6 @@ use serde_json::de::{Deserializer as JsonDeserializer, SliceRead};
 use super::{AtmoOpacity, FetchError, NO_READING, PressureDirection, SEASON_CAP, SolarLongitude, Temperature, UvIndex};
 use super::{WeatherSample, WindDirection, truncate_season};
 
-const SOLES: &str = "soles";
 const DATE_FORMAT: &str = "%Y-%m-%d";
 const TIME_FORMAT: &str = "%H:%M";
 const SOL_FIELD_COUNT: usize = 17;
@@ -235,12 +234,17 @@ pub enum Field {
     Other,
 }
 
-struct FeedName {
+struct FeedName<F> {
     name: &'static str,
-    field: Field,
+    field: F,
 }
 
-const SOL_FIELDS: [FeedName; SOL_FIELD_COUNT] = [
+// The field a feed key names, or `other` for a key the decoder does not read.
+fn named_field<F: Copy>(names: &[FeedName<F>], text: &str, other: F) -> F {
+    return names.iter().find(|known: &&FeedName<F>| known.name == text).map_or(other, |known: &FeedName<F>| known.field);
+}
+
+const SOL_FIELDS: [FeedName<Field>; SOL_FIELD_COUNT] = [
     FeedName { name: "sol", field: Field::Number(NumberField::Sol) },
     FeedName { name: "ls", field: Field::Number(NumberField::SolarLongitude) },
     FeedName { name: "min_temp", field: Field::Number(NumberField::MinTemp) },
@@ -270,7 +274,7 @@ impl Shape<'_> for SolKey {
     }
 
     fn text(self, text: &str) -> Field {
-        return SOL_FIELDS.iter().find(|known: &&FeedName| known.name == text).map_or(Field::Other, |known: &FeedName| known.field);
+        return named_field(&SOL_FIELDS, text, Field::Other);
     }
 }
 
@@ -375,6 +379,8 @@ pub enum FeedKey {
     Other,
 }
 
+const FEED_KEYS: &[FeedName<FeedKey>] = &[FeedName { name: "soles", field: FeedKey::Soles }];
+
 impl Shape<'_> for FeedKey {
     type Output = FeedKey;
 
@@ -383,7 +389,7 @@ impl Shape<'_> for FeedKey {
     }
 
     fn text(self, text: &str) -> FeedKey {
-        return if text == SOLES { FeedKey::Soles } else { FeedKey::Other };
+        return named_field(FEED_KEYS, text, FeedKey::Other);
     }
 }
 

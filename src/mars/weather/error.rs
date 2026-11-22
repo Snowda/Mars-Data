@@ -80,7 +80,7 @@ mod tests {
     }
 
     fn tls_error() -> rustls::Error {
-        return rustls::Error::General("no usable cipher suite".to_owned());
+        return rustls::Error::FailedToGetCurrentTime;
     }
 
     #[test]

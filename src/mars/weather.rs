@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn parse_full_report_populates_all_fields() {
-        let report = json!({
+        let report: Value = json!({
             "terrestrial_date": "2025-09-10",
             "sol": "100",
             "min_temp": "-80",
@@ -239,7 +239,7 @@ mod tests {
             "sunset": "18:00"
         });
 
-        let sample = decode(&report);
+        let sample: WeatherSample = decode(&report);
 
         assert_eq!(sample.terrestrial_date, Date::new(2025, 9, 10).ok());
         assert_eq!(sample.sol, 100);
@@ -262,9 +262,9 @@ mod tests {
 
     #[test]
     fn parse_empty_report_uses_defaults() {
-        let report = json!({});
+        let report: Value = json!({});
 
-        let sample = decode(&report);
+        let sample: WeatherSample = decode(&report);
 
         assert_eq!(sample.terrestrial_date, None);
         assert_eq!(sample.sol, 0);
@@ -287,38 +287,38 @@ mod tests {
 
     #[test]
     fn parse_numeric_string_is_coerced() {
-        let report = json!({ "pressure": "819" });
-        let sample = decode(&report);
+        let report: Value = json!({ "pressure": "819" });
+        let sample: WeatherSample = decode(&report);
         assert_eq!(sample.pressure, Some(819.0));
     }
 
     #[test]
     fn parse_unavailable_sentinel_yields_none() {
         // The feed uses "--" to mark a measurement it does not have.
-        let report = json!({ "abs_humidity": "--", "wind_speed": "--" });
-        let sample = decode(&report);
+        let report: Value = json!({ "abs_humidity": "--", "wind_speed": "--" });
+        let sample: WeatherSample = decode(&report);
         assert!(sample.abs_humidity.is_none());
         assert!(sample.wind_speed.is_none());
     }
 
     #[test]
     fn parse_pressure_string_lower_is_falling() {
-        let report = json!({ "pressure_string": "Lower" });
-        let sample = decode(&report);
+        let report: Value = json!({ "pressure_string": "Lower" });
+        let sample: WeatherSample = decode(&report);
         assert_eq!(sample.pressure_change_direction, Some(PressureDirection::Falling));
     }
 
     #[test]
     fn parse_non_numeric_temp_yields_none() {
-        let report = json!({ "min_temp": "cold" });
-        let sample = decode(&report);
+        let report: Value = json!({ "min_temp": "cold" });
+        let sample: WeatherSample = decode(&report);
         assert!(sample.min_temp.is_none());
     }
 
     #[test]
     fn parse_non_numeric_pressure_yields_none() {
-        let report = json!({ "pressure": "high" });
-        let sample = decode(&report);
+        let report: Value = json!({ "pressure": "high" });
+        let sample: WeatherSample = decode(&report);
         assert!(sample.pressure.is_none());
     }
 
@@ -343,46 +343,46 @@ mod tests {
 
     #[test]
     fn parse_invalid_terrestrial_date_yields_none() {
-        let report = json!({ "terrestrial_date": 42 });
-        let sample = decode(&report);
+        let report: Value = json!({ "terrestrial_date": 42 });
+        let sample: WeatherSample = decode(&report);
         assert_eq!(sample.terrestrial_date, None);
     }
 
     #[test]
     fn parse_non_integer_sol_falls_back_to_zero() {
-        let report = json!({ "sol": "not-a-number" });
-        let sample = decode(&report);
+        let report: Value = json!({ "sol": "not-a-number" });
+        let sample: WeatherSample = decode(&report);
         assert_eq!(sample.sol, 0);
     }
 
     #[test]
     fn parse_sol_from_json_number() {
         // The feed may emit sol as a bare JSON number rather than a string.
-        let report = json!({ "sol": 100 });
-        let sample = decode(&report);
+        let report: Value = json!({ "sol": 100 });
+        let sample: WeatherSample = decode(&report);
         assert_eq!(sample.sol, 100);
     }
 
     #[test]
     fn parse_fractional_sol_string_falls_back_to_zero() {
         // sol is an integer count: a fractional string is rejected (not truncated).
-        let report = json!({ "sol": "100.9" });
-        let sample = decode(&report);
+        let report: Value = json!({ "sol": "100.9" });
+        let sample: WeatherSample = decode(&report);
         assert_eq!(sample.sol, 0);
     }
 
     #[test]
     fn parse_ls_from_json_number() {
-        let report = json!({ "ls": 5 });
-        let sample = decode(&report);
+        let report: Value = json!({ "ls": 5 });
+        let sample: WeatherSample = decode(&report);
         assert_eq!(sample.solar_longitude, longitude(5));
     }
 
     #[test]
     fn parse_fractional_ls_string_yields_none() {
         // ls is an integer degree: a fractional string is rejected (not truncated).
-        let report = json!({ "ls": "5.5" });
-        let sample = decode(&report);
+        let report: Value = json!({ "ls": "5.5" });
+        let sample: WeatherSample = decode(&report);
         assert_eq!(sample.solar_longitude, None);
     }
 
@@ -411,7 +411,7 @@ mod tests {
         ]
         .into_iter()
         .for_each(|(s, expected): (&str, WindDirection)| {
-            let report = json!({ "wind_direction": s });
+            let report: Value = json!({ "wind_direction": s });
             assert_eq!(decode(&report).wind_direction, Some(expected));
         });
     }
@@ -426,7 +426,7 @@ mod tests {
         ]
         .into_iter()
         .for_each(|(s, expected): (&str, AtmoOpacity)| {
-            let report = json!({ "atmo_opacity": s });
+            let report: Value = json!({ "atmo_opacity": s });
             assert_eq!(decode(&report).atmo_opacity, Some(expected));
         });
     }
@@ -436,7 +436,7 @@ mod tests {
         // 30 ASCII bytes + one 4-byte char = 34 bytes. The old fixed-offset byte
         // slice panicked here ("byte index 32 is not a char boundary"). The emoji
         // straddles byte 32, so the parser drops it whole and keeps the 30 ASCII bytes.
-        let report = json!({ "season": SEASON_STRADDLING_BYTE_32 });
+        let report: Value = json!({ "season": SEASON_STRADDLING_BYTE_32 });
         let Some(parsed) = decode(&report).season else {
             panic!("season should be populated");
         };
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn parse_multibyte_season_fills_to_exact_capacity() {
         // Eight 4-byte chars = exactly 32 bytes: all fit, none are split.
-        let report = json!({ "season": EIGHT_ROCKETS });
+        let report: Value = json!({ "season": EIGHT_ROCKETS });
         let Some(parsed) = decode(&report).season else {
             panic!("season should be populated");
         };
@@ -467,7 +467,7 @@ mod tests {
         ]
         .into_iter()
         .for_each(|(s, expected): (&str, UvIndex)| {
-            let report = json!({ "local_uv_irradiance_index": s });
+            let report: Value = json!({ "local_uv_irradiance_index": s });
             assert_eq!(decode(&report).uv_index, Some(expected));
         });
     }

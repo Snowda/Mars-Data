@@ -122,6 +122,7 @@ mod tests {
     use axum::body::{self, Bytes};
     use axum::extract::State;
     use axum::http::StatusCode;
+    use axum::response::Response;
     use serde_json::{Value, json};
     use tokio::net::TcpListener;
     use tokio::sync::watch;
@@ -157,7 +158,7 @@ mod tests {
     async fn weather_not_ready_status_and_body_are_documented() -> Result<(), axum::Error> {
         let spec: Value = openapi_contract::spec();
         let (_tx, rx) = watch::channel::<Option<WeatherSample>>(None);
-        let response = weather(State(rx)).await;
+        let response: Response = weather(State(rx)).await;
         assert!(is_documented(&spec, WEATHER_PATH, response.status()));
 
         let body: Bytes = body::to_bytes(response.into_body(), MAX_TEST_BODY_BYTES).await?;
@@ -170,7 +171,7 @@ mod tests {
     #[tokio::test]
     async fn weather_ok_status_is_documented() -> Result<(), serde_json::Error> {
         let (_tx, rx) = watch::channel::<Option<WeatherSample>>(Some(sample()?));
-        let response = weather(State(rx)).await;
+        let response: Response = weather(State(rx)).await;
         assert!(is_documented(&openapi_contract::spec(), WEATHER_PATH, response.status()));
         return Ok(());
     }
@@ -294,7 +295,7 @@ mod tests {
     }
 
     fn sample() -> Result<WeatherSample, serde_json::Error> {
-        let value = json!({
+        let value: Value = json!({
             "terrestrial_date": "2025-09-10",
             "sol": 100,
             "min_temp": -80.0,
@@ -324,14 +325,14 @@ mod tests {
     #[tokio::test]
     async fn weather_returns_service_unavailable_without_data() {
         let (_tx, rx) = watch::channel::<Option<WeatherSample>>(None);
-        let response = weather(State(rx)).await;
+        let response: Response = weather(State(rx)).await;
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]
     async fn weather_returns_ok_with_data() -> Result<(), serde_json::Error> {
         let (_tx, rx) = watch::channel::<Option<WeatherSample>>(Some(sample()?));
-        let response = weather(State(rx)).await;
+        let response: Response = weather(State(rx)).await;
         assert_eq!(response.status(), StatusCode::OK);
         return Ok(());
     }
@@ -340,7 +341,7 @@ mod tests {
     async fn weather_body_is_the_published_sample() -> Result<(), TestError> {
         let expected: WeatherSample = sample()?;
         let (_tx, rx) = watch::channel::<Option<WeatherSample>>(Some(sample()?));
-        let response = weather(State(rx)).await;
+        let response: Response = weather(State(rx)).await;
         let body: Bytes = body::to_bytes(response.into_body(), MAX_TEST_BODY_BYTES).await?;
         let served: WeatherSample = serde_json::from_slice(&body)?;
         assert_eq!(served, expected, "the handler must serve the sample the refresher published");

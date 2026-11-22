@@ -288,13 +288,13 @@ mod tests {
 
     #[test]
     fn temperature_from_celsius_stores_value() {
-        let t = Temperature::from_celsius(20.0);
+        let t: Temperature = Temperature::from_celsius(20.0);
         assert_eq!(t.celsius, 20.0);
     }
 
     #[test]
     fn temperature_display_formats_celsius() {
-        let t = Temperature::from_celsius(-12.5);
+        let t: Temperature = Temperature::from_celsius(-12.5);
         assert_eq!(format!("{}", t), "-12.5 °C");
     }
 

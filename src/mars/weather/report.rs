@@ -81,18 +81,19 @@ mod tests {
     use std::ptr;
 
     use super::PressureDirection;
+    use super::WeatherSample;
     use crate::mars::weather::tests::full_sample;
 
     #[test]
     fn print_report_returns_same_instance() {
-        let sample = full_sample();
-        let returned = sample.print_report();
+        let sample: WeatherSample = full_sample();
+        let returned: &WeatherSample = sample.print_report();
         assert!(ptr::eq(returned, &sample));
     }
 
     #[test]
     fn print_report_handles_all_none_optionals() {
-        let mut sample = full_sample();
+        let mut sample: WeatherSample = full_sample();
         sample.min_temp = None;
         sample.max_temp = None;
         sample.min_ground_temp = None;
@@ -102,20 +103,20 @@ mod tests {
         sample.wind_speed = None;
         sample.wind_direction = None;
         sample.uv_index = None;
-        let returned = sample.print_report();
+        let returned: &WeatherSample = sample.print_report();
         assert!(ptr::eq(returned, &sample));
     }
 
     #[test]
     fn print_report_reports_falling_pressure() {
-        let mut sample = full_sample();
+        let mut sample: WeatherSample = full_sample();
         sample.pressure_change_direction = Some(PressureDirection::Falling);
         assert!(ptr::eq(sample.print_report(), &sample));
     }
 
     #[test]
     fn print_report_handles_partial_wind_data() {
-        let mut sample = full_sample();
+        let mut sample: WeatherSample = full_sample();
         sample.wind_speed = Some(5.0);
         sample.wind_direction = None;
         assert!(ptr::eq(sample.print_report(), &sample));
