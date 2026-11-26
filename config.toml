@@ -4,11 +4,13 @@
 host = "127.0.0.1"
 # Port the weather API binds to.
 port = 3000
-# How often the `serve` command re-fetches the latest sol, in seconds.
+# How often the `serve` command re-fetches the latest sol, in seconds. Must be > 0.
 refresh_interval_secs = 3600
 
 [weather]
-# Total request timeout for fetching weather data, in seconds.
+# Upstream feed URL; omitting it also uses NASA's MSL feed. Point it at a mirror or a local stub.
+url = "https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json"
+# Total request timeout for fetching weather data, in seconds. Must be > 0.
 request_timeout_secs = 5
-# Connection establishment timeout, in seconds.
+# Connection establishment timeout, in seconds. Must be > 0.
 connect_timeout_secs = 3

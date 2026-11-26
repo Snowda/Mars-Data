@@ -1,5 +1,3 @@
-#![cfg(feature = "integration_tests")]
-
 use std::fmt::Write;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
@@ -52,9 +50,10 @@ fn local_url(port: u16, path: &str) -> ArrayString<MAX_URL_BYTES> {
 // The body of the first 200 reply, or None if every attempt failed.
 async fn poll_until_ok(url: &str, attempts: u32) -> Option<Bytes> {
     let client: Client<HttpConnector, Empty<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
-    let uri: Uri = url.parse().ok()?;
     for _ in 0..attempts {
-        if let Ok(response) = client.get(uri.clone()).await
+        // Client::get takes the Uri by value, so each attempt parses its own.
+        let uri: Uri = url.parse().ok()?;
+        if let Ok(response) = client.get(uri).await
             && response.status() == StatusCode::OK
             && let Ok(collected) = response.into_body().collect().await
         {
@@ -66,6 +65,7 @@ async fn poll_until_ok(url: &str, attempts: u32) -> Option<Bytes> {
 }
 
 #[tokio::test]
+#[cfg_attr(not(feature = "integration_tests"), ignore = "fetches the live weather feed; run with --features integration_tests")]
 // serde_json::Error converts into io::Error, so one io::Result carries both failure kinds.
 async fn serve_exposes_health_and_weather_endpoints() -> io::Result<()> {
     let port: u16 = free_port()?;
