@@ -58,7 +58,7 @@ axum = "0.8"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 
 # Time library
-jiff = { version = "0.2.39", features = ["serde"] }
+jiff = { version = "0.2.43", features = ["serde"] }
 
 # Stack-allocated strings and vecs with known bounds
 arrayvec = { version = "0.7", features = ["serde"] }
@@ -83,8 +83,8 @@ codegen-units = 1
 overflow-checks = true
 
 [lints.rust]
-# No unsafe anywhere in the tree (forbid blocks even a local #[allow] opt-in).
-unsafe_code = "forbid"
+# No unsafe anywhere in the tree. deny, not forbid, so a dependency's macro-generated #[allow(unsafe_code)] compiles.
+unsafe_code = "deny"
 
 [lints.clippy]
 ref_option = "deny"
